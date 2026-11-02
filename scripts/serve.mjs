@@ -1,0 +1,3 @@
+import {createServer} from 'node:http'; import {readFile} from 'node:fs/promises'; import {resolve,extname} from 'node:path';
+const root=resolve(process.argv.includes('--dist')?'dist':'.');
+createServer(async(req,res)=>{try{const path=resolve(root,'.'+decodeURIComponent(new URL(req.url,'http://localhost').pathname));if(!path.startsWith(root+'/')&&path!==root)throw Error();const file=path===root||req.url==='/'?resolve(root,'index.html'):path;res.setHeader('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json'})[extname(file)]||'application/octet-stream');res.end(await readFile(file));}catch{res.writeHead(404);res.end('Not found');}}).listen(4173,'127.0.0.1',()=>console.log('Retirement Path: http://127.0.0.1:4173'));

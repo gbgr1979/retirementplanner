@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "name": "Illustrative retirement plan",
+  "startMonth": "2026-11",
+  "endAge": 95,
+  "includePartner": false,
+  "inflation": 2.5,
+  "scenarioSpread": 2,
+  "monthlySpending": 2500,
+  "spendingStart": "2044-11",
+  "people": [
+    {
+      "id": "you",
+      "name": "You (example)",
+      "dob": "1979-11-01",
+      "retirementMonth": "2044-11",
+      "region": "rUK",
+      "taxFreeUsed": 0
+    },
+    {
+      "id": "partner",
+      "name": "Partner (example)",
+      "dob": "1981-11-01",
+      "retirementMonth": "2046-11",
+      "region": "rUK",
+      "taxFreeUsed": 0
+    }
+  ],
+  "pots": [
+    {
+      "id": "isa",
+      "name": "Stocks & shares ISA",
+      "owner": "you",
+      "type": "stocksIsa",
+      "balance": 40000,
+      "monthlyContribution": 300,
+      "employerContribution": 0,
+      "contributionBasis": "gross",
+      "growth": 5,
+      "fee": 0.3,
+      "contributionStart": "2026-11",
+      "contributionEnd": "2044-10",
+      "accessAge": 57
+    },
+    {
+      "id": "cash",
+      "name": "Cash savings",
+      "owner": "you",
+      "type": "savings",
+      "balance": 15000,
+      "monthlyContribution": 100,
+      "employerContribution": 0,
+      "contributionBasis": "gross",
+      "growth": 2.5,
+      "fee": 0,
+      "contributionStart": "2026-11",
+      "contributionEnd": "2044-10",
+      "accessAge": 57
+    },
+    {
+      "id": "pension",
+      "name": "Workplace pension",
+      "owner": "you",
+      "type": "workplace",
+      "balance": 120000,
+      "monthlyContribution": 400,
+      "employerContribution": 250,
+      "contributionBasis": "gross",
+      "growth": 5,
+      "fee": 0.5,
+      "contributionStart": "2026-11",
+      "contributionEnd": "2044-10",
+      "accessAge": 57
+    },
+    {
+      "id": "partnerIsa",
+      "name": "Partner ISA (example)",
+      "owner": "partner",
+      "type": "cashIsa",
+      "balance": 20000,
+      "monthlyContribution": 150,
+      "employerContribution": 0,
+      "contributionBasis": "gross",
+      "growth": 3,
+      "fee": 0,
+      "contributionStart": "2026-11",
+      "contributionEnd": "2046-10",
+      "accessAge": 57
+    }
+  ],
+  "incomes": [
+    {
+      "id": "stateExample",
+      "name": "State Pension — illustrative, replace with your forecast",
+      "owner": "you",
+      "type": "state",
+      "monthlyAmount": 900,
+      "startMonth": "2046-11",
+      "endMonth": "2074-11",
+      "escalation": 2.5
+    }
+  ],
+  "events": [
+    {
+      "id": "holiday",
+      "name": "Example retirement trip",
+      "month": "2044-11",
+      "type": "withdrawal",
+      "potId": "isa",
+      "toPotId": "",
+      "amount": 8000
+    }
+  ]
+}
