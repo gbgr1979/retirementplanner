@@ -1,6 +1,6 @@
 # Retirement Path — UK retirement-planning MVP
 
-A dependency-free, browser-only static web app. Working name only; all initial numbers and dates of birth are fictitious examples, not Gareth's personal financial information. Source repository: https://github.com/gbgr1979/retirementplanner . No deployment is configured.
+A dependency-free, browser-only static web app. Working name only; all initial numbers and dates of birth are fictitious examples, not Gareth's personal financial information. Source repository: https://github.com/gbgr1979/retirementplanner . No automatic deployment is configured; the optional Windows publisher below runs only when you launch it.
 
 ## Run on Windows
 
@@ -82,3 +82,41 @@ Rules reviewed 2 November 2026. Always verify current rules before making decisi
 - https://www.moneyhelper.org.uk/en/pensions-and-retirement
 
 No affiliation or endorsement is implied. This MVP should receive further independent financial-model review and broader device/accessibility testing before public use.
+
+## Pull latest source and publish from Windows
+
+Prerequisites: a **Git clone** (not a ZIP download), Git for Windows, Windows PowerShell 5.1, Node.js 22+ with npm, internet access, and an existing Azure Static Web App. Once these scripts are on `main`, pull once and double-click **`publish.cmd`**. It updates from `origin/main`, runs all checks, rebuilds `dist/`, and deploys to **production**. No Azure app URL is needed: the deployment token selects the app. Running the script is the action that publishes; merely downloading these files does not deploy anything.
+
+The launcher refuses the wrong repository, a branch other than `main`, dirty/untracked source files, or local commits not on remote main. It never resets, force-pulls, deletes your source changes, or switches branches. Commit, move or stash your changes yourself when instructed. It fetches then fast-forwards to the fetched commit (equivalent to an ff-only pull), and starts the freshly updated publisher in a new PowerShell process.
+
+### Local token file (optional)
+
+Copy `publish.local.example.ps1` to **`publish.local.ps1`**, beside `publish.cmd`, and replace the placeholder locally:
+
+```powershell
+$AzureDeploymentToken = 'YOUR_NEW_DEPLOYMENT_TOKEN'
+```
+
+This is a **plaintext secret**, not encryption. Restrict access to your Windows account; never email, upload, paste into chat, commit, or include this file in a source ZIP. It is Git-ignored, and the publisher refuses it if it becomes tracked. Git ignore is not protection against deliberate `git add -f`. The file is local PowerShell code: do not use an untrusted downloaded replacement. **Rotate any deployment token previously pasted into chat** in Azure Portal → Static Web App → Manage deployment token, and use the replacement locally.
+
+Without that local file, the publisher uses an existing process environment variable named `SWA_CLI_DEPLOYMENT_TOKEN`, or prompts for a masked token with `Read-Host -AsSecureString`. Do not pass a token on the command line or put it in the tracked scripts. The script does not persist prompted credentials or use the OS keychain. Precedence: local file, environment, hidden prompt. An invalid local file fails rather than silently choosing another token.
+
+### Check without publishing
+
+From Command Prompt in the clone:
+
+```bat
+publish.cmd -PrepareOnly
+publish.cmd -PrepareOnly -NoPause
+publish.cmd -NoPause
+```
+
+`-PrepareOnly` still pulls main and runs tests/build, but **does not read the local token, install the Azure CLI, connect to Azure, or publish**. `-NoPause` disables the closing Enter prompt; without a token, a real publish still prompts for one. Exit code is zero on success and nonzero on failure. For local development without pulling, use `npm run check`.
+
+Only seven allowlisted public assets enter `dist/`: `index.html`, `styles.css`, `staticwebapp.config.json`, and the four browser JavaScript modules. Source plans (`sample-plan.json` or your saved financial JSON), credentials, tests, scripts, docs and `.git` are excluded. The browser JavaScript is necessarily public; do not hardcode personal data or secrets into it. Additional files or links in `dist/` fail validation. Keep personal saved plans **outside the Git clone**.
+
+The publisher temporarily installs the official **`@azure/static-web-apps-cli@2.0.10`** from npm with lifecycle scripts disabled and keychain persistence off. No global install or project dependencies are added. The CLI may download Microsoft's deployment client. npm's package cache remains on your machine, but the script's temporary working directory is removed. The token is supplied only to the deploy process through its environment, never as an argument; inherited SWA settings are isolated so an old API path or debug setting cannot alter this deployment. This does not make plaintext secrets inaccessible to other software running as your Windows user.
+
+Reference: [Microsoft SWA CLI deployment](https://learn.microsoft.com/en-us/azure/static-web-apps/static-web-apps-cli), [official deployment options](https://azure.github.io/static-web-apps-cli/docs/cli/swa-deploy/), [pinned release](https://github.com/Azure/static-web-apps-cli/releases/tag/v2.0.10).
+
+Validation: Node tests/build and payload rejection checks run in Linux. Windows PowerShell execution, interactive double-click flow and a real Azure deployment have **not** been run in this environment. Start with `publish.cmd -PrepareOnly` on Windows before your first real publish.

@@ -5,3 +5,8 @@ node_modules/
 test-results/
 playwright-report/
 *.zip
+# Local deployment secrets: never commit, archive or publish.
+publish.local.ps1
+.env
+.env.*
+!.env.example
