@@ -40,3 +40,9 @@ The file chooser required native approval and completed without a bypass. Load r
 ## Release boundaries
 
 This is a locally built MVP prepared for initial source upload to `gbgr1979/retirementplanner`; it is not a published website. Financial model limitations are prominently shown in the app and README: gross-only scheduled withdrawals, no automatic drawdown or surplus carry-forward, incomplete/frozen tax estimate. This does not validate retirement sustainability or recommend a withdrawal strategy. Further specialist review is advisable before promoting it as a public financial planning tool.
+
+## Guided setup update — 2 November 2026
+
+Independent actual-browser checks passed: prominent homepage CTA; blank age, negative balance and out-of-range growth validation with focus; Back retains fields; partner toggle retains entered values; review totals; explicit replacement required; Escape preserves original unsaved editor and returns focus to CTA; completion updates model/charts and focuses results; repeated wizard Cancel preserves the existing plan and newer unsaved edit; keyboard Tab enters the first field.
+
+Mobile responsive CSS was reviewed, but actual mobile/narrow-viewport rendering remains untested (no supported viewport control). Native dialog provides focus containment and Escape behaviour. Pure wizard tests cover fresh data/no guessed pension income, partner retention, ages/dates/horizon validation, one-count combined pension contributions, and ordinary pension-access boundary changes. No new dependency or user setup step was introduced. Both deployment paths explicitly include the wizard's two JavaScript modules in the nine-file public allowlist; standalone publishing client code is unchanged.
