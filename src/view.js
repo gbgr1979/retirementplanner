@@ -12,3 +12,16 @@ export function retirementSnapshot(plan,years){
  const match=years.find(y=>y.year>=retirementYear);
  return {year:match||years.at(-1),withinHorizon:!!match};
 }
+
+/** Only successful plan acceptance reveals the workspace; cancelled/failed flows preserve it. */
+export function updatePlanScreen(root,event) {
+ const landing=root.getElementById('landing');
+ if(event==='initialise') {
+  landing.hidden=false;
+  for(const id of ['planner-view','plan-actions','skip-projection'])root.getElementById(id).hidden=true;
+ } else if(event==='planAccepted') {
+  landing.hidden=true;
+  for(const id of ['planner-view','plan-actions','skip-projection'])root.getElementById(id).hidden=false;
+ }
+ return !root.getElementById('planner-view').hidden;
+}

@@ -128,6 +128,12 @@ Validation: Node tests/build and payload rejection checks run in Linux. Windows 
 
 The homepage **Start your retirement plan** button opens a four-step, keyboard-accessible fresh-plan wizard: timeline, money, editable assumptions, review. Age inputs start blank and balances start at zero. No State Pension entitlement, future income or withdrawals are guessed. Pension monthly input means the total added, including employer payments and tax relief, counted exactly once.
 
-Back retains draft values. Cancel and Escape leave the currently displayed plan and unsaved editor values untouched. Creating a plan requires an explicit replacement checkbox: this is a **fresh plan**, not a merge into existing advanced settings. Completion resets the view to base growth and today's money, marks the plan unsaved and leaves all advanced controls available.
+Back retains draft values. Cancel and Escape leave the currently displayed plan and unsaved editor values untouched. Creating a replacement for an existing plan requires an explicit replacement checkbox: this is a **fresh plan**, not a merge into existing advanced settings. First-time setup simply creates the new plan. Completion resets the view to base growth and today's money, marks the plan unsaved and leaves all advanced controls available.
 
 Ages become approximate first-of-month dates; exact dates, Scottish tax region and pension forecasts can be entered afterwards. Growth, charges, inflation, retirement age and spending defaults are editable scenario assumptions, not recommendations. No contact information, account, server request or autosave is added.
+
+## Simple landing page
+
+The initial screen contains only a short introduction, **Start your retirement plan**, and a discreet **Load a saved plan** button. Example figures, editor controls, charts and technical notes remain hidden until a wizard is completed or a saved plan is successfully loaded. Cancelled setup, cancelled file selection/replacement and invalid files do not reveal or reset the workspace.
+
+Once a plan is open, **New plan** starts a separate draft. Cancelling it preserves the current plan and any unsaved editor fields; replacing it requires explicit confirmation. There is deliberately no destructive Home/reset navigation. Reloading a tab returns to the landing page; save your plan file first (unsaved changes trigger the usual browser warning). No new modules, dependencies or publishing steps were added for this simplification.
