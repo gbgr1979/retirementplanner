@@ -85,7 +85,7 @@ No affiliation or endorsement is implied. This MVP should receive further indepe
 
 ## Pull latest source and publish from Windows
 
-Prerequisites: a **Git clone** (not a ZIP download), Git for Windows, Windows PowerShell 5.1 on 64-bit Windows, internet access, and an existing Azure Static Web App. Once these scripts are on `main`, pull once and double-click **`publish.cmd`**. It updates from `origin/main`, prepares and verifies the seven public assets in `dist/`, and deploys to **production**. No Azure app URL is needed: the deployment token selects the app. Running the script is the action that publishes; merely downloading these files does not deploy anything.
+Prerequisites: a **Git clone** (not a ZIP download), Git for Windows, Windows PowerShell 5.1 on 64-bit Windows, internet access, and an existing Azure Static Web App. Once these scripts are on `main`, pull once and double-click **`publish.cmd`**. It updates from `origin/main`, prepares and verifies the nine public assets in `dist/`, and deploys to **production**. No Azure app URL is needed: the deployment token selects the app. Running the script is the action that publishes; merely downloading these files does not deploy anything.
 
 The launcher refuses the wrong repository, a branch other than `main`, dirty/untracked source files, or local commits not on remote main. It never resets, force-pulls, deletes your source changes, or switches branches. Commit, move or stash your changes yourself when instructed. It fetches then fast-forwards to the fetched commit (equivalent to an ff-only pull), and starts the freshly updated publisher in a new PowerShell process.
 
@@ -114,7 +114,7 @@ publish.cmd -NoPause
 
 `-PrepareOnly` still pulls main and prepares/verifies the public files, but **does not use the token, download the Microsoft deployment client, connect to Azure, or publish**. `-NoPause` disables the closing Enter prompt; without a token, a real publish still prompts for one. Exit code is zero on success and nonzero on failure. Publishing requires **no Node.js, npm, Azure CLI, or module installation**. For development, `npm run check` still runs the JavaScript tests/build with Node.js; those developer tests are not run by the Windows publisher.
 
-Only seven allowlisted public assets enter `dist/`: `index.html`, `styles.css`, `staticwebapp.config.json`, and the four browser JavaScript modules. Source plans (`sample-plan.json` or your saved financial JSON), credentials, tests, scripts, docs and `.git` are excluded. The browser JavaScript is necessarily public; do not hardcode personal data or secrets into it. Additional files or links in `dist/` fail validation. Keep personal saved plans **outside the Git clone**.
+Only nine allowlisted public assets enter `dist/`: `index.html`, `styles.css`, `staticwebapp.config.json`, and the six browser JavaScript modules. Source plans (`sample-plan.json` or your saved financial JSON), credentials, tests, scripts, docs and `.git` are excluded. The browser JavaScript is necessarily public; do not hardcode personal data or secrets into it. Additional files or links in `dist/` fail validation. Keep personal saved plans **outside the Git clone**.
 
 The publisher uses the **same standalone Microsoft deployment-client approach as the original example**, not the Node-based SWA CLI. PowerShell downloads Microsoft's stable Windows x64 client using the official `https://aka.ms/swalocaldeploy` release metadata, validates the SHA-256 before execution, and removes the temporary client/work folder afterward. No software installation is needed. It copies only allowlisted files, byte-for-byte, verifies their hashes, and rejects linked source/output paths. The private wrapper you already received is unchanged.
 
@@ -123,3 +123,11 @@ The token is passed only through process environment variables, never command ar
 Reference: [Microsoft SWA CLI deployment](https://learn.microsoft.com/en-us/azure/static-web-apps/static-web-apps-cli), [official deployment options](https://azure.github.io/static-web-apps-cli/docs/cli/swa-deploy/), [Microsoft client download implementation](https://github.com/Azure/static-web-apps-cli/blob/v2.0.10/src/core/download-binary-helper.ts).
 
 Validation: Node tests/build and payload rejection checks run in Linux. Windows PowerShell execution, interactive double-click flow and a real Azure deployment have **not** been run in this environment. Start with `publish.cmd -PrepareOnly` on Windows before your first real publish.
+
+## Guided setup wizard
+
+The homepage **Start your retirement plan** button opens a four-step, keyboard-accessible fresh-plan wizard: timeline, money, editable assumptions, review. Age inputs start blank and balances start at zero. No State Pension entitlement, future income or withdrawals are guessed. Pension monthly input means the total added, including employer payments and tax relief, counted exactly once.
+
+Back retains draft values. Cancel and Escape leave the currently displayed plan and unsaved editor values untouched. Creating a plan requires an explicit replacement checkbox: this is a **fresh plan**, not a merge into existing advanced settings. Completion resets the view to base growth and today's money, marks the plan unsaved and leaves all advanced controls available.
+
+Ages become approximate first-of-month dates; exact dates, Scottish tax region and pension forecasts can be entered afterwards. Growth, charges, inflation, retirement age and spending defaults are editable scenario assumptions, not recommendations. No contact information, account, server request or autosave is added.

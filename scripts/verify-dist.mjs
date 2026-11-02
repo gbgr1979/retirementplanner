@@ -14,7 +14,7 @@ export async function verifyDist(root = 'dist') {
     else throw Error('Unsupported deployment asset.');
   }
   await walk();
-  if (JSON.stringify(found.sort()) !== JSON.stringify([...staticFiles].sort())) throw Error('dist must contain exactly the seven approved public assets.');
+  if (JSON.stringify(found.sort()) !== JSON.stringify([...staticFiles].sort())) throw Error('dist must contain exactly the approved public assets.');
   console.log('Verified static-only deployment payload.');
 }
 if (process.argv[1] && resolve(process.argv[1]) === resolve('scripts/verify-dist.mjs')) await verifyDist();

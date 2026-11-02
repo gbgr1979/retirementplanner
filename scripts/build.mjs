@@ -10,4 +10,4 @@ for (const file of staticFiles) {
   await mkdir(dirname(`dist/${file}`), {recursive: true});
   await copyFile(file, `dist/${file}`);
 }
-console.log('Static website prepared in dist/ (seven public assets only).');
+console.log('Static website prepared in dist/ (nine public assets only).');
