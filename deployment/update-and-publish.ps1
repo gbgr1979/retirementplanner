@@ -19,15 +19,15 @@ try {
     $origin = Git-Output @('remote', 'get-url', 'origin')
     if ($origin -notmatch '^(https://github\.com/gbgr1979/retirementplanner(?:\.git)?|git@github\.com:gbgr1979/retirementplanner(?:\.git)?|ssh://git@github\.com/gbgr1979/retirementplanner(?:\.git)?)$') { throw 'Origin must be gbgr1979/retirementplanner on GitHub.' }
     if ((Git-Output @('branch', '--show-current')) -ne 'main') { throw 'Switch to main before publishing; this script will not switch branches for you.' }
-    if (Git-Output @('ls-files', '--', 'publish.local.ps1')) { throw 'publish.local.ps1 is tracked! Remove it from Git and rotate the token before continuing.' }
+    if (Git-Output @('ls-files', '--', 'publish.ps1', 'publish.local.ps1')) { throw 'A private publish PS1 is tracked! Remove it from Git and rotate the token before continuing.' }
     if (Git-Output @('status', '--porcelain', '--untracked-files=all')) { throw 'Working tree has changes. Commit, move or stash them yourself before publishing. Nothing was overwritten.' }
     Write-Host 'Fetching the latest main...'
     Git-Output @('fetch', '--no-tags', 'origin', 'main')
     & git merge-base --is-ancestor HEAD FETCH_HEAD
     if ($LASTEXITCODE -ne 0) { throw 'Local main has unpublished or divergent commits. Resolve manually; no reset or force-pull was performed.' }
-    if (Git-Output @('ls-tree', '--name-only', 'FETCH_HEAD', '--', 'publish.local.ps1')) { throw 'Remote main tracks local credentials. Refusing to overwrite your local token file.' }
+    if (Git-Output @('ls-tree', '--name-only', 'FETCH_HEAD', '--', 'publish.ps1', 'publish.local.ps1')) { throw 'Remote main tracks local credentials. Refusing to overwrite your local token file.' }
     Git-Output @('merge', '--ff-only', '--no-overwrite-ignore', 'FETCH_HEAD')
-    if (Git-Output @('ls-files', '--', 'publish.local.ps1')) { throw 'Refusing tracked local credentials. Rotate the token and remove the file from Git.' }
+    if (Git-Output @('ls-files', '--', 'publish.ps1', 'publish.local.ps1')) { throw 'Refusing tracked local credentials. Rotate the token and remove the file from Git.' }
     # Fresh process loads the UPDATED publisher, not the pre-pull copy of its functions.
     $env:SWA_CLI_DEPLOYMENT_TOKEN = $originalToken
     $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $root 'deployment\publish-static-web-app.ps1'), '-NoPause')

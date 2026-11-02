@@ -11,7 +11,7 @@ test('deployment payload rejects private files, missing assets and symlinks', as
  try {
   for (const file of staticFiles) { await mkdir(dirname(join(root,file)), {recursive:true}); await writeFile(join(root,file),'fixture'); }
   await verifyDist(root);
-  for (const name of ['plan.json', 'publish.local.ps1', '.env', 'src/private.json']) {
+  for (const name of ['plan.json', 'publish.ps1', 'publish.local.ps1', '.env', 'src/private.json']) {
    await writeFile(join(root,name),'not-a-secret');
    await assert.rejects(verifyDist(root), /exactly/); await rm(join(root,name));
   }
@@ -29,7 +29,13 @@ test('Windows launcher and publishing security contracts remain explicit', async
  assert.match(publish,/@azure\/static-web-apps-cli@2\.0\.10/);
  assert.match(publish,/--no-use-keychain/); assert.match(publish,/-AsSecureString/);
  assert.doesNotMatch(publish,/--deployment-token|--print-token/);
- assert.ok(publish.indexOf('if ($PrepareOnly)') < publish.indexOf('. $credentialFile'));
- const ignore = await readFile('.gitignore','utf8'); assert.match(ignore,/^publish\.local\.ps1$/m);
+ assert.ok(publish.indexOf('if ($PrepareOnly)') < publish.indexOf('Read-Host'));
+ assert.match(cmd, /%~dp0publish\.ps1/);
+ const wrapper = await readFile('deployment/publish.example.ps1','utf8');
+ assert.match(wrapper, /deployment\\update-and-publish\.ps1/);
+ assert.match(wrapper, /if \(-not \$PrepareOnly/);
+ assert.match(update, /'publish\.ps1', 'publish\.local\.ps1'/);
+ assert.match(update, /--no-overwrite-ignore/);
+ const ignore = await readFile('.gitignore','utf8'); assert.match(ignore,/^publish\.ps1$/m); assert.match(ignore,/^publish\.local\.ps1$/m);
  assert.deepEqual(staticFiles.filter(p=>p.endsWith('.json')),['staticwebapp.config.json']);
 });

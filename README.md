@@ -89,17 +89,18 @@ Prerequisites: a **Git clone** (not a ZIP download), Git for Windows, Windows Po
 
 The launcher refuses the wrong repository, a branch other than `main`, dirty/untracked source files, or local commits not on remote main. It never resets, force-pulls, deletes your source changes, or switches branches. Commit, move or stash your changes yourself when instructed. It fetches then fast-forwards to the fetched commit (equivalent to an ff-only pull), and starts the freshly updated publisher in a new PowerShell process.
 
-### Local token file (optional)
+### The same CMD + PS1 arrangement
 
-Copy `publish.local.example.ps1` to **`publish.local.ps1`**, beside `publish.cmd`, and replace the placeholder locally:
+You use just **`publish.cmd`** and **`publish.ps1`**, side by side at the root of the clone:
 
-```powershell
-$AzureDeploymentToken = 'YOUR_NEW_DEPLOYMENT_TOKEN'
-```
+- `publish.cmd` is the double-click launcher.
+- `publish.ps1` is your private wrapper, with your deployment token hardcoded inside. It calls the maintained helpers in `deployment/`; you do not need to edit those helpers.
 
-This is a **plaintext secret**, not encryption. Restrict access to your Windows account; never email, upload, paste into chat, commit, or include this file in a source ZIP. It is Git-ignored, and the publisher refuses it if it becomes tracked. Git ignore is not protection against deliberate `git add -f`. The file is local PowerShell code: do not use an untrusted downloaded replacement. **Rotate any deployment token previously pasted into chat** in Azure Portal → Static Web App → Manage deployment token, and use the replacement locally.
+Save your supplied private `publish.ps1` beside `publish.cmd`. Alternatively, copy `deployment/publish.example.ps1` to root `publish.ps1` and replace its placeholder token locally. Then double-click `publish.cmd`. There is **no separate token file** to configure. If you have the earlier `publish.local.ps1`, it is no longer used; securely remove that old copy once your new wrapper is in place.
 
-Without that local file, the publisher uses an existing process environment variable named `SWA_CLI_DEPLOYMENT_TOKEN`, or prompts for a masked token with `Read-Host -AsSecureString`. Do not pass a token on the command line or put it in the tracked scripts. The script does not persist prompted credentials or use the OS keychain. Precedence: local file, environment, hidden prompt. An invalid local file fails rather than silently choosing another token.
+`publish.ps1` is a **plaintext secret**, Git-ignored and excluded from the website. Never commit, share, or include it in a source ZIP; restrict access to your Windows account. The updater refuses tracked private wrappers and preserves your ignored copy during pulls. Git ignore does not prevent deliberate `git add -f`. **Rotate any deployment token previously pasted into chat** in Azure Portal → Static Web App → Manage deployment token, and update your private PS1 with the replacement.
+
+If the template still has its placeholder, an existing `SWA_CLI_DEPLOYMENT_TOKEN` environment value or a masked prompt is used instead. The token never appears in command-line arguments; keychain storage is disabled. The actual private wrapper is intentionally absent from GitHub, so a fresh clone needs your private PS1 copied beside the CMD once.
 
 ### Check without publishing
 
@@ -111,11 +112,11 @@ publish.cmd -PrepareOnly -NoPause
 publish.cmd -NoPause
 ```
 
-`-PrepareOnly` still pulls main and runs tests/build, but **does not read the local token, install the Azure CLI, connect to Azure, or publish**. `-NoPause` disables the closing Enter prompt; without a token, a real publish still prompts for one. Exit code is zero on success and nonzero on failure. For local development without pulling, use `npm run check`.
+`-PrepareOnly` still pulls main and runs tests/build, but **does not use the token, install the Azure CLI, connect to Azure, or publish**. `-NoPause` disables the closing Enter prompt; without a token, a real publish still prompts for one. Exit code is zero on success and nonzero on failure. For local development without pulling, use `npm run check`.
 
 Only seven allowlisted public assets enter `dist/`: `index.html`, `styles.css`, `staticwebapp.config.json`, and the four browser JavaScript modules. Source plans (`sample-plan.json` or your saved financial JSON), credentials, tests, scripts, docs and `.git` are excluded. The browser JavaScript is necessarily public; do not hardcode personal data or secrets into it. Additional files or links in `dist/` fail validation. Keep personal saved plans **outside the Git clone**.
 
-The publisher temporarily installs the official **`@azure/static-web-apps-cli@2.0.10`** from npm with lifecycle scripts disabled and keychain persistence off. No global install or project dependencies are added. The CLI may download Microsoft's deployment client. npm's package cache remains on your machine, but the script's temporary working directory is removed. The token is supplied only to the deploy process through its environment, never as an argument; inherited SWA settings are isolated so an old API path or debug setting cannot alter this deployment. This does not make plaintext secrets inaccessible to other software running as your Windows user.
+The publisher temporarily installs the official **`@azure/static-web-apps-cli@2.0.10`** from npm with lifecycle scripts disabled and keychain persistence off. No global install or project dependencies are added. The CLI may download Microsoft's deployment client. npm's package cache remains on your machine, but the script's temporary working directory is removed. The wrapper passes the token through process environment variables, never as an argument; helpers remove it while fetching, testing, building and installing the CLI, then expose it only for deployment; inherited SWA settings are isolated so an old API path or debug setting cannot alter this deployment. This does not make plaintext secrets inaccessible to other software running as your Windows user.
 
 Reference: [Microsoft SWA CLI deployment](https://learn.microsoft.com/en-us/azure/static-web-apps/static-web-apps-cli), [official deployment options](https://azure.github.io/static-web-apps-cli/docs/cli/swa-deploy/), [pinned release](https://github.com/Azure/static-web-apps-cli/releases/tag/v2.0.10).
 

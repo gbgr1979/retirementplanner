@@ -6,6 +6,7 @@ test-results/
 playwright-report/
 *.zip
 # Local deployment secrets: never commit, archive or publish.
+publish.ps1
 publish.local.ps1
 .env
 .env.*

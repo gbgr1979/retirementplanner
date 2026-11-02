@@ -20,7 +20,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Unsafe deployment payload. Nothing was deployed.' }
     $dist = Join-Path $root 'dist'
     if ($PrepareOnly) {
-        Write-Host "Ready in $dist. PrepareOnly: no credentials read, no Azure connection or deployment."
+        Write-Host "Ready in $dist. PrepareOnly: no token used, no Azure connection or deployment."
     } else {
         # Install the official pinned CLI before exposing any deployment token.
         # Lifecycle scripts are disabled; keychain support is not used.
@@ -29,14 +29,7 @@ try {
         Set-Location -LiteralPath $temp
         & npm.cmd install --prefix $temp --no-save --package-lock=false --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org '@azure/static-web-apps-cli@2.0.10'
         if ($LASTEXITCODE -ne 0) { throw 'Could not install the pinned Microsoft SWA CLI. Nothing was deployed.' }
-        $credentialFile = Join-Path $root 'publish.local.ps1'
-        if (Test-Path -LiteralPath $credentialFile) {
-            $trackedCredential = & git -C $root ls-files -- publish.local.ps1
-            if ($LASTEXITCODE -ne 0) { throw 'Could not verify local credentials are untracked. Use a Git clone.' }
-            if ($trackedCredential) { throw 'Refusing tracked local credentials. Remove the file from Git and rotate the token.' }
-            # This is explicitly opted-in local PowerShell code, never fetched from Git.
-            try { . $credentialFile } catch { throw 'Could not read publish.local.ps1. Check its syntax locally; do not share its contents.' }
-        } elseif ($savedEnvironment.ContainsKey('SWA_CLI_DEPLOYMENT_TOKEN')) {
+        if ($savedEnvironment.ContainsKey('SWA_CLI_DEPLOYMENT_TOKEN')) {
             $AzureDeploymentToken = $savedEnvironment['SWA_CLI_DEPLOYMENT_TOKEN']
         } else {
             $secureToken = Read-Host 'Paste Azure Static Web App deployment token (hidden)' -AsSecureString
@@ -44,7 +37,7 @@ try {
             try { $AzureDeploymentToken = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer) }
             finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer); $secureToken.Dispose() }
         }
-        if ([string]::IsNullOrWhiteSpace($AzureDeploymentToken) -or $AzureDeploymentToken -eq 'REPLACE_WITH_YOUR_NEW_AZURE_DEPLOYMENT_TOKEN') { throw 'Provide a valid token in publish.local.ps1, the environment, or the hidden prompt.' }
+        if ([string]::IsNullOrWhiteSpace($AzureDeploymentToken) -or $AzureDeploymentToken -eq 'REPLACE_WITH_YOUR_NEW_AZURE_DEPLOYMENT_TOKEN') { throw 'Provide a valid token in your private publish.ps1, the environment, or the hidden prompt.' }
         $env:SWA_CLI_DEPLOYMENT_TOKEN = $AzureDeploymentToken
         $env:SWA_CLI_DEBUG = 'log'
         $env:SWA_CLI_TELEMETRY = 'off'
