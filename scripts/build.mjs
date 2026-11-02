@@ -1,4 +1,13 @@
-import {mkdir,cp,rm} from 'node:fs/promises';
-await rm('dist',{recursive:true,force:true}); await mkdir('dist');
-for(const file of ['index.html','styles.css','src','staticwebapp.config.json']) await cp(file,`dist/${file}`,{recursive:true});
-console.log('Static website prepared in dist/.');
+import {mkdir, copyFile, rm, lstat} from 'node:fs/promises';
+import {dirname} from 'node:path';
+import {staticFiles} from './static-files.mjs';
+// Refuse linked inputs, including the src directory, before touching output.
+for (const file of ['src', ...staticFiles]) {
+  if ((await lstat(file)).isSymbolicLink()) throw Error(`Refusing linked build input: ${file}`);
+}
+await rm('dist', {recursive: true, force: true});
+for (const file of staticFiles) {
+  await mkdir(dirname(`dist/${file}`), {recursive: true});
+  await copyFile(file, `dist/${file}`);
+}
+console.log('Static website prepared in dist/ (seven public assets only).');
