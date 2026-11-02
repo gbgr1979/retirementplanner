@@ -12,3 +12,7 @@ test('wizard modules are explicitly shipped and have no implicit persistence or 
  const html=await readFile('index.html','utf8');assert.match(html,/<button id="start-wizard"/);assert.match(html,/<dialog id="setup-wizard" aria-labelledby="wizard-title"/);
 });
 test('initial HTML never flashes example dashboard before JavaScript',async()=>{const html=await readFile('index.html','utf8');for(const id of ['planner-view','plan-actions','skip-projection'])assert.match(html,new RegExp(`<[^>]+id="${id}"[^>]* hidden`));assert.match(html,/<section id="landing"/);assert.match(html,/id="load-home"/);const app=await readFile('src/app.js','utf8');assert.match(app,/for\(const id of \['load','load-home'\]/);assert.match(app,/plan=loaded[\s\S]*?updatePlanScreen\(document,'planAccepted'\)/);assert.match(app,/onComplete:freshPlan=>[\s\S]*?updatePlanScreen\(document,'planAccepted'\)/);});
+test('landing copy describes starting assets, projections and planned withdrawals without sustainability promises',async()=>{
+ const html=await readFile('index.html','utf8');const landing=html.match(/<section id="landing"[\s\S]*?<\/section>/)[0];
+ assert.match(landing,/savings, investments and pensions today/);assert.match(landing,/what they could be worth/);assert.match(landing,/planned withdrawals change your balances over time/);assert.doesNotMatch(landing,/safe withdrawal|sustainable withdrawal|guarantee|how long your money will last/i);
+});
