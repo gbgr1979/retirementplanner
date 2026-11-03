@@ -56,3 +56,10 @@ test('income stages and pension annotations are shipped while obsolete scenario 
  assert.match(app,/incomeRanges.readPlan\(readDetailedEditor\(\)\)/);assert.doesNotMatch(html,/income-stage-select|income-stages-dialog|withdrawal-amount/);assert.match(app,/pensionEvents.markers/);
  const {staticFiles}=await import('../scripts/static-files.mjs');for(const file of ['src/income-stages.js','src/income-stage-ui.js'])assert.ok(staticFiles.includes(file));
 });
+
+test('retirement timing precedes the income table in the scenario card',async()=>{
+ const html=await readFile('index.html','utf8');
+ assert.ok(html.indexOf('id="retirement-control-title"')<html.indexOf('id="income-ranges"'));
+ assert.ok(html.indexOf('id="income-ranges"')<html.indexOf('class="growth-controls"'));
+ assert.match(html,/Until dates are exclusive/);
+});

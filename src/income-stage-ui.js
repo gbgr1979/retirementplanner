@@ -72,93 +72,114 @@ export function addIncomeStageDraft(plan, draft) {
   return {...draft, stages: [...draft.stages.map(stage => ({...stage})), {fromAge: String(age), annualAmount: draft.stages.at(-1)?.annualAmount ?? draft.annualAmount}]};
 }
 
-/** Inline draft controller. Never rebuild amount inputs during ordinary typing or chart refreshes. */
+/** Calendar years identify birthday-based monthly boundaries, including December rollover. */
+export function boundaryYearToAge(dob, value, field = 'is-errors') {
+  const text = String(value).trim();
+  if (!/^\d{4}$/.test(text)) fail('Enter a four-digit end year.', field);
+  for (let age = 18; age <= 110; age++) if (stageStartMonth(dob, age).slice(0, 4) === text) return age;
+  fail('Choose an end year corresponding to a primary age between 18 and 110.', field);
+}
+/** Same exclusive birthday-month / 80-year horizon used by the projection engine. */
+export function incomeTableHorizon(plan) {
+  const person=primary(plan), index=month=>Number(month.slice(0,4))*12+Number(month.slice(5,7))-1;
+  const birthdayEnd=index(person.dob)+plan.endAge*12, cap=index(plan.startMonth)+80*12, end=Math.min(birthdayEnd,cap);
+  const month=`${Math.floor(end/12)}-${String(end%12+1).padStart(2,'0')}`;
+  const age=Math.floor((end-index(person.dob)-(person.dob.slice(8)==='01'?0:1))/12);
+  return {month, note:cap<birthdayEnd?`Plan end · 80-year limit · age ${age}`:`Plan end · up to age ${plan.endAge}`};
+}
+
+const monthLabel = month => new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-GB', {month:'short',year:'numeric',timeZone:'UTC'});
+
+/** Inline table controller; ordinary typing and chart refreshes retain input nodes. */
 export function mountIncomeStages({root = document, getPlan, onComplete, onDraftChange = () => {}, onError = () => {}}) {
   const content = root.querySelector('#income-ranges');
   if (!content) throw new Error('Income ranges need their inline container.');
-  let snapshot = copy(getPlan()), draft = createIncomeStageDraft(snapshot);
+  let snapshot = copy(getPlan()), draft = createIncomeStageDraft(snapshot), years = [], dobNotice = '';
   const find = id => content.querySelector(`#${id}`);
+  const yearFor = stage => stageStartMonth(primary(snapshot).dob, Number(stage.fromAge)).slice(0,4);
+  const resetYears = () => { years = draft.stages.map(stage => ({text:yearFor(stage),dirty:false})); };
+  resetYears();
   function readDraft() {
     draft.annualAmount = find('is-baseline').value;
-    draft.stages.forEach((stage, i) => { stage.fromAge = find(`is-age-${i}`).value; stage.annualAmount = find(`is-amount-${i}`).value; });
+    draft.stages.forEach((stage,i) => {
+      const text = find(`is-year-${i}`).value;
+      years[i].dirty ||= text !== years[i].text; years[i].text = text;
+      stage.annualAmount = find(`is-amount-${i}`).value;
+    });
   }
   function clearErrors() {
     find('is-errors').hidden = true;
-    for (const id of ['is-add', 'is-baseline', ...draft.stages.flatMap((_, i) => [`is-age-${i}`, `is-amount-${i}`])]) {
-      find(id)?.removeAttribute('aria-invalid');
-      if (find(`${id}-error`)) find(`${id}-error`).textContent = '';
+    for (const id of ['is-add','is-baseline',...draft.stages.flatMap((_,i)=>[`is-year-${i}`,`is-amount-${i}`])]) {
+      find(id)?.removeAttribute('aria-invalid'); if(find(`${id}-error`))find(`${id}-error`).textContent='';
     }
   }
   function showError(error, focus = false) {
-    const summary = find('is-errors'); summary.hidden = false; summary.textContent = `${error.message} Charts still show the last valid plan.`;
-    const field = find(error.field || 'is-errors') || summary;
-    if (field !== summary) { field.setAttribute('aria-invalid', 'true'); const inline = find(`${error.field}-error`); if (inline) inline.textContent = error.message; }
-    if (focus) field.focus();
-    onError(error);
+    if(error.field?.startsWith('is-age-')){error.field=error.field.replace('is-age-','is-year-');if(error.message.includes('later than the previous'))error.message='Each end year must be later than the previous end year. Edit the years or remove the unwanted row.';}
+    const summary=find('is-errors');summary.hidden=false;summary.textContent=`${error.message} Charts still show the last valid plan.`;
+    const field=find(error.field||'is-errors')||summary;
+    if(field!==summary){field.setAttribute('aria-invalid','true');const inline=find(`${error.field}-error`);if(inline)inline.textContent=error.message;}
+    if(focus)field.focus();onError(error);
+  }
+  function displayBoundary(i) {
+    try { const age=years[i].dirty?boundaryYearToAge(primary(snapshot).dob,years[i].text):Number(draft.stages[i].fromAge);return {age,month:stageStartMonth(primary(snapshot).dob,age)}; }
+    catch { return null; }
   }
   function updateRanges() {
-    const person = primary(snapshot);
-    find('is-baseline-range').textContent = draft.stages.length ? `Retirement until age ${draft.stages[0].fromAge || '…'}` : 'From retirement onwards';
-    find('is-baseline-date').textContent = `Retirement starts ${person.retirementMonth}`;
-    find('is-age-basis').textContent = `Ages refer to ${person.name} (the primary person). Each range starts at the first monthly boundary on or after their birthday.`;
-    draft.stages.forEach((stage, i) => {
-      const next = draft.stages[i + 1], age = Number(stage.fromAge);
-      find(`is-remove-${i}`).setAttribute('aria-label', `Remove range starting at age ${/^\d+$/.test(stage.fromAge) && age >= 18 && age <= 110 ? stage.fromAge : 'not yet valid'}`);
-      find(`is-until-${i}`).textContent = next ? `until age ${next.fromAge || '…'}` : 'onwards';
-      const month = /^\d+$/.test(stage.fromAge) && age >= 18 && age <= 110 ? stageStartMonth(person.dob, age) : null;
-      const note = month && month <= person.retirementMonth ? ' Already in force at retirement; the latest applicable range takes priority.' : age >= snapshot.endAge ? ' At or beyond the plan ending age; retained even if unused.' : '';
-      find(`is-range-${i}`).textContent = `${month ? `Starts ${month}.` : 'Enter a valid age to see the start month.'}${note}`;
+    const person=primary(snapshot), horizon=incomeTableHorizon(snapshot), possessive=/^you(?:\s*\(.*\))?$/i.test(person.name)?'your':`${person.name}’s`;
+    find('is-plan-end').textContent=monthLabel(horizon.month);find('is-plan-end-note').textContent=horizon.note;
+    find('is-baseline-range').textContent=monthLabel(person.retirementMonth);
+    const [ry,rm]=person.retirementMonth.split('-').map(Number),[by,bm,bd]=person.dob.split('-').map(Number);
+    const retirementAge=ry-by-(rm<bm||(rm===bm&&bd>1)?1:0);
+    find('is-baseline-date').textContent=`Retirement · age ${retirementAge}`;
+    find('is-age-basis').textContent=`End year is exclusive: the next row starts at that boundary. Boundaries use the first monthly boundary on or after ${possessive} birthday, not 1 January. The final row continues to the plan end.`;
+    find('is-dob-notice').textContent=dobNotice;find('is-dob-notice').hidden=!dobNotice;
+    draft.stages.forEach((stage,i)=>{
+      const boundary=displayBoundary(i);
+      find(`is-from-${i}`).textContent=boundary?monthLabel(boundary.month):'Enter an end year above';
+      find(`is-boundary-${i}`).textContent=boundary?`${monthLabel(boundary.month)} · age ${boundary.age}`:'Enter a valid boundary year';
+      find(`is-remove-${i}`).setAttribute('aria-label',`Remove row starting ${boundary?monthLabel(boundary.month):'at an invalid boundary'}`);
+      const note=boundary&&boundary.month<=person.retirementMonth?'Already in force at retirement; the latest applicable row takes priority.':boundary&&boundary.age>=snapshot.endAge?'At or beyond the plan ending age; retained even if unused.':'';
+      find(`is-range-${i}`).textContent=boundary?`Age ${boundary.age}. ${note}`:note;
     });
-    for (const [i, amount] of [[-1, draft.annualAmount], ...draft.stages.map((s,i) => [i,s.annualAmount])]) {
-      const value = parseMoneyInput(amount);
-      find(`is-minus-${i}`).disabled = Number.isFinite(value) && value <= 0;
-      find(`is-plus-${i}`).disabled = Number.isFinite(value) && value >= 12000000;
+    for(const [i,amount] of [[-1,draft.annualAmount],...draft.stages.map((stage,i)=>[i,stage.annualAmount])]){
+      const value=parseMoneyInput(amount);find(`is-minus-${i}`).disabled=Number.isFinite(value)&&value<=0;find(`is-plus-${i}`).disabled=Number.isFinite(value)&&value>=12000000;
     }
   }
   function render(focus) {
-    const money = (id, value, i) => `<div class="range-amount"><label for="${id}">Annual amount before tax</label><div class="plan-stepper range-stepper"><button type="button" id="is-minus-${i}" data-step="-1" data-stage="${i}" aria-label="Reduce annual amount for range ${i + 2} by £1,000">−</button><div class="plan-value"><span aria-hidden="true">£</span><input type="text" data-money inputmode="decimal" id="${id}" value="${esc(value)}" aria-describedby="${id}-error"></div><button type="button" id="is-plus-${i}" data-step="1" data-stage="${i}" aria-label="Increase annual amount for range ${i + 2} by £1,000">+</button></div><span class="field-error" id="${id}-error"></span></div>`;
-    content.innerHTML = `<div class="income-range-heading"><h4>Income by age range</h4><span>£1,000 steps · edit any amount</span></div><div id="is-errors" class="field-error" role="alert" tabindex="-1" hidden></div>
-      <div class="income-range-row"><div class="range-period"><strong id="is-baseline-range"></strong><p id="is-baseline-date" class="plan-control-hint"></p></div>${money('is-baseline',draft.annualAmount,-1)}</div>
-      ${draft.stages.map((stage,i) => `<div class="income-range-row"><div class="range-period"><div class="range-age-line"><label for="is-age-${i}">From age</label><input type="text" inputmode="numeric" id="is-age-${i}" value="${esc(stage.fromAge)}" aria-describedby="is-age-${i}-error is-range-${i}"><strong id="is-until-${i}"></strong></div><span id="is-age-${i}-error" class="field-error"></span><p id="is-range-${i}" class="plan-control-hint"></p><button type="button" class="text-button range-remove" id="is-remove-${i}" data-remove-stage="${i}" aria-label="Remove range starting at age ${esc(stage.fromAge)}">Remove range</button></div>${money(`is-amount-${i}`,stage.annualAmount,i)}</div>`).join('')}
-      <div class="income-range-footer"><button type="button" id="is-add" ${draft.stages.length >= 10 ? 'disabled' : ''}>+ Add age range</button><p class="plan-control-hint">The new range starts with the previous amount. Edit it to suit your plan.</p></div><p id="is-age-basis" class="plan-control-hint"></p>`;
-    updateRanges(); if (focus) find(focus)?.focus();
+    const money=(id,value,i)=>`<label class="sr-only" for="${id}">Annual amount before tax for row ${i+2}</label><div class="plan-stepper range-stepper"><button type="button" id="is-minus-${i}" data-step="-1" data-stage="${i}" aria-label="Reduce annual amount for row ${i+2} by £1,000">−</button><div class="plan-value"><span aria-hidden="true">£</span><input type="text" data-money inputmode="decimal" id="${id}" value="${esc(value)}" aria-describedby="${id}-error"></div><button type="button" id="is-plus-${i}" data-step="1" data-stage="${i}" aria-label="Increase annual amount for row ${i+2} by £1,000">+</button></div><span class="field-error" id="${id}-error"></span>`;
+    const until=i=>i<draft.stages.length?`<label class="sr-only" for="is-year-${i}">End year for row ${i+1} (exclusive)</label><input class="range-year" type="text" inputmode="numeric" id="is-year-${i}" value="${esc(years[i].text)}" aria-describedby="is-year-${i}-error is-boundary-${i}"><p class="plan-control-hint" id="is-boundary-${i}"></p><span class="field-error" id="is-year-${i}-error"></span>`:'<strong id="is-plan-end"></strong><p id="is-plan-end-note" class="plan-control-hint"></p>';
+    content.innerHTML=`<div id="is-errors" class="field-error" role="alert" tabindex="-1" hidden></div><p id="is-dob-notice" class="plan-control-hint" role="status" hidden></p><table class="income-range-table"><caption class="sr-only">Annual income ranges before tax. End years are exclusive.</caption><thead><tr><th scope="col">From year</th><th scope="col">End year</th><th scope="col">Annual amount before tax</th></tr></thead><tbody>
+      <tr><td data-label="From year"><strong id="is-baseline-range"></strong><p id="is-baseline-date" class="plan-control-hint"></p></td><td data-label="End year">${until(0)}</td><td data-label="Annual amount before tax">${money('is-baseline',draft.annualAmount,-1)}</td></tr>
+      ${draft.stages.map((stage,i)=>`<tr><td data-label="From year"><strong id="is-from-${i}"></strong><p class="plan-control-hint" id="is-range-${i}"></p><button type="button" class="text-button range-remove" id="is-remove-${i}" data-remove-stage="${i}">Remove row</button></td><td data-label="End year">${until(i+1)}</td><td data-label="Annual amount before tax">${money(`is-amount-${i}`,stage.annualAmount,i)}</td></tr>`).join('')}
+      </tbody><tfoot><tr><td colspan="3"><div class="income-range-footer"><button type="button" id="is-add" ${draft.stages.length>=10?'disabled':''}>+ Add another row</button><p class="plan-control-hint">Starts with the previous amount. Edit the end year and amount to suit your plan.</p></div></td></tr></tfoot></table><p id="is-age-basis" class="plan-control-hint"></p>`;
+    updateRanges();if(focus)find(focus)?.focus();
   }
-  function readPlan(base = getPlan(), focus = true) {
-    readDraft(); clearErrors();
-    try { return buildIncomeStagePlan(base, draft); }
-    catch (error) { showError(error, focus); throw error; }
+  function readPlan(base=getPlan(),focus=true) {
+    readDraft();clearErrors();
+    try {
+      if(primary(base).dob!==primary(snapshot).dob&&years.some(year=>year.dirty))fail('The date of birth and a table year have both changed. Restore the date of birth and finish the year edit first, then change the date of birth separately. Typed years have been kept.',`is-year-${years.findIndex(year=>year.dirty)}`);
+      const candidateDraft=copy(draft);
+      candidateDraft.stages.forEach((stage,i)=>{if(years[i].dirty)stage.fromAge=String(boundaryYearToAge(primary(snapshot).dob,years[i].text,`is-year-${i}`));});
+      const candidate=buildIncomeStagePlan(base,candidateDraft);
+      // Keep raw year text and input nodes; only ages are committed here.
+      draft=candidateDraft;years.forEach(year=>{year.dirty=false;});return candidate;
+    } catch(error){showError(error,focus);throw error;}
   }
-  function apply(focus = false) {
-    try { const candidate = readPlan(getPlan(), focus); snapshot = copy(candidate); onComplete(candidate); return true; }
-    catch (error) { if (!error.field) showError(error, focus); return false; }
-  }
-  function change(event) {
-    if (event.isComposing) return;
-    readDraft(); onDraftChange(); updateRanges(); apply(false);
-  }
-  function click(event) {
-    const remove = event.target.closest('[data-remove-stage]');
-    const step = event.target.closest('[data-step]');
-    if (remove) { readDraft(); draft.stages.splice(Number(remove.dataset.removeStage),1); onDraftChange(); render('is-add'); apply(false); return; }
-    if (event.target.closest('#is-add')) {
-      readDraft();
-      try { draft = addIncomeStageDraft(getPlan(), draft); onDraftChange(); render(`is-age-${draft.stages.length - 1}`); apply(false); }
-      catch (error) { showError(error,true); }
+  function apply(focus=false){try{const candidate=readPlan(getPlan(),focus);onComplete(candidate);refresh(candidate);return true;}catch(error){if(!error.field)showError(error,focus);return false;}}
+  function change(event){if(event.isComposing)return;readDraft();onDraftChange();updateRanges();apply(false);}
+  function click(event){
+    const remove=event.target.closest('[data-remove-stage]'),step=event.target.closest('[data-step]');
+    if(remove){readDraft();const i=Number(remove.dataset.removeStage);draft.stages.splice(i,1);years.splice(i,1);onDraftChange();render('is-add');apply(false);return;}
+    if(event.target.closest('#is-add')){
+      readDraft();try{const current=copy(draft);current.stages.forEach((stage,i)=>{if(years[i].dirty)stage.fromAge=String(boundaryYearToAge(primary(snapshot).dob,years[i].text,`is-year-${i}`));});const next=addIncomeStageDraft(snapshot,current);draft.stages.push(next.stages.at(-1));years.push({text:yearFor(draft.stages.at(-1)),dirty:false});onDraftChange();render(`is-year-${draft.stages.length-1}`);apply(false);}catch(error){showError(error,true);}
     }
-    if (step) {
-      try {
-        // Validate every pending range before a button can change any live amount.
-        readPlan(getPlan()); const i = Number(step.dataset.stage), id = i < 0 ? 'is-baseline' : `is-amount-${i}`;
-        find(id).value = stepIncomeAmount(find(id).value, Number(step.dataset.step));
-        readDraft(); onDraftChange(); updateRanges(); apply(true);
-      } catch (error) { if (!error.field) showError(error,true); }
-    }
+    if(step){try{readPlan(getPlan());const i=Number(step.dataset.stage),id=i<0?'is-baseline':`is-amount-${i}`;find(id).value=stepIncomeAmount(find(id).value,Number(step.dataset.step));readDraft();onDraftChange();updateRanges();apply(true);}catch(error){if(!error.field)showError(error,true);}}
   }
-  render(); content.addEventListener('input',change); content.addEventListener('click',click);
-  return {
-    readPlan, apply,
-    refresh(plan) { snapshot = copy(plan); updateRanges(); },
-    reset(plan) { snapshot = copy(plan); draft = createIncomeStageDraft(plan); render(); },
-    destroy() { content.removeEventListener('input',change); content.removeEventListener('click',click); }
-  };
+  function refresh(plan){
+    const changed=primary(snapshot).dob!==primary(plan).dob;snapshot=copy(plan);
+    if(changed){dobNotice='Date of birth changed: the saved age boundaries are unchanged; their calendar years are shown below.';draft.stages.forEach((stage,i)=>{if(!years[i].dirty){years[i].text=yearFor(stage);find(`is-year-${i}`).value=years[i].text;}});}
+    updateRanges();
+  }
+  render();content.addEventListener('input',change);content.addEventListener('click',click);
+  return {readPlan,apply,refresh,reset(plan){snapshot=copy(plan);draft=createIncomeStageDraft(plan);dobNotice='';resetYears();render();},destroy(){content.removeEventListener('input',change);content.removeEventListener('click',click);}};
 }
