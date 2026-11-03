@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {project,incomeTax,pensionAccessible} from '../src/model.js';
 const near=(a,b)=>assert.ok(Math.abs(a-b)<.00001,`${a} != ${b}`);
-function plan(){return {version:2,drawdown:{annualAmount:0,inflationLinked:false},name:'Test',startMonth:'2026-04',endAge:61,includePartner:false,inflation:0,scenarioSpread:2,monthlySpending:1000,spendingStart:'2026-04',people:[{id:'you',name:'You',dob:'1966-04-01',retirementMonth:'2028-04',region:'rUK',taxFreeUsed:0},{id:'partner',name:'Partner',dob:'1966-04-01',retirementMonth:'2028-04',region:'rUK',taxFreeUsed:0}],pots:[pot()],incomes:[],events:[]};}
+function plan(){return {version:3,drawdown:{mode:'pots',annualAmount:0,inflationLinked:false},name:'Test',startMonth:'2026-04',endAge:61,includePartner:false,inflation:0,scenarioSpread:2,monthlySpending:1000,spendingStart:'2026-04',people:[{id:'you',name:'You',dob:'1966-04-01',retirementMonth:'2028-04',region:'rUK',taxFreeUsed:0},{id:'partner',name:'Partner',dob:'1966-04-01',retirementMonth:'2028-04',region:'rUK',taxFreeUsed:0}],pots:[pot()],incomes:[],events:[]};}
 function pot(id='a'){return {id,name:id,owner:'you',type:'cashIsa',balance:10000,monthlyContribution:0,employerContribution:0,contributionBasis:'gross',growth:0,fee:0,contributionStart:'2026-04',contributionEnd:'2090-01',accessAge:57};}
 function event(overrides={}){return {id:'event',name:'Withdrawal',month:'2026-04',type:'withdrawal',potId:'a',toPotId:'',amount:1000,...overrides};}
 
@@ -13,7 +13,7 @@ test('spending is not secretly withdrawn and shortfall does not vanish with weal
 test('gross savings withdrawal funds spend with no double counting',()=>{const p=plan();p.events=[event()];const m=project(p).months[0];near(m.total,9000);near(m.withdrawalsNet,1000);near(m.shortfall,0);});
 test('insufficient event rejected entirely, no negative balance',()=>{const p=plan();p.events=[event({amount:10001})];const r=project(p);near(r.months[0].total,10000);near(r.months[0].withdrawalsGross,0);assert.match(r.warnings.join(' '),/insufficient/);});
 test('same-owner transfer conserves household wealth and not spending',()=>{const p=plan();p.pots.push({...pot('b'),balance:0});p.events=[event({type:'transfer',toPotId:'b'})];const m=project(p).months[0];near(m.total,10000);near(m.balances.a,9000);near(m.balances.b,1000);near(m.withdrawalsGross,0);near(m.shortfall,1000);});
-test('cross-owner and pension transfers rejected',()=>{for(const mode of ['owner','pension']){const p=plan();p.includePartner=true;p.pots.push({...pot('b'),balance:0,owner:mode==='owner'?'partner':'you',type:mode==='pension'?'sipp':'cashIsa'});p.events=[event({type:'transfer',toPotId:'b'})];const r=project(p);near(r.months[0].balances.a,10000);assert.match(r.warnings.join(' '),/only same-owner/);}});
+test('cross-owner and pension transfers rejected',()=>{for(const mode of ['owner','pension']){const p=plan();p.includePartner=true;p.pots.push({...pot('b'),balance:0,owner:mode==='owner'?'partner':'you',type:mode==='pension'?'sipp':'cashIsa'});p.events=[event({type:'transfer',toPotId:'b'})];assert.throws(()=>project(p),/transfers require two different non-pension pots/);}});
 test('disabled partner data is retained but ignored',()=>{const p=plan();p.pots.push({...pot('b'),owner:'partner',balance:20000});const before=JSON.stringify(p);near(project(p).months[0].total,10000);assert.equal(JSON.stringify(p),before);p.includePartner=true;near(project(p).months[0].total,30000);});
 test('relief at source and employer contribution added once',()=>{const p=plan();Object.assign(p.pots[0],{type:'sipp',monthlyContribution:80,employerContribution:50,contributionBasis:'netRelief'});near(project(p).months[0].contributions,150);p.pots[0].contributionBasis='gross';near(project(p).months[0].contributions,130);});
 test('contributions stop in retirement month and specified end is inclusive',()=>{const p=plan();p.people[0].retirementMonth='2026-06';p.pots[0].monthlyContribution=100;const r=project(p);near(r.months[0].contributions,100);near(r.months[1].contributions,100);near(r.months[2].contributions,0);p.pots[0].contributionEnd='2026-04';near(project(p).months[1].contributions,0);});
@@ -33,7 +33,7 @@ test('out of horizon events explicitly warned and not executed',()=>{const p=pla
 test('sequential same-month events reject overspend rather than negative balance',()=>{const p=plan();p.events=[event({amount:6000}),event({id:'b',amount:6000})];const r=project(p);near(r.months[0].total,4000);near(r.months[0].withdrawalsGross,6000);assert.match(r.warnings.join(' '),/insufficient/);});
 test('full fictitious example stays finite and reconciles every pot, month and year',async()=>{const {createExamplePlan}=await import('../src/plan.js');const p=createExamplePlan();for(const scenario of ['lower','base','higher']){const r=project(p,{scenario});assert.equal(r.months.length,576);for(const m of r.months){for(const n of ['total','accessible','locked','incomeNet','withdrawalsNet','tax','spending','shortfall'])assert.ok(Number.isFinite(m[n])&&m[n]>=0,`${scenario} ${m.month} ${n}`);near(m.opening+m.contributions+m.growth-m.fees-m.withdrawalsGross,m.total);for(const l of Object.values(m.potLedger))near(l.opening+l.contributions+l.growth-l.fees-l.withdrawals+l.transfersIn-l.transfersOut,l.closing);}for(const y of r.years)near(y.opening+y.contributions+y.growth-y.fees-y.withdrawals,y.closing);}});
 test('Object-prototype-name pot ids have finite ledgers and never mutate builtins',async()=>{const {validatePlan}=await import('../src/plan.js');const names=['toString','valueOf','hasOwnProperty','isPrototypeOf','toLocaleString'];const before=names.map(name=>Object.getOwnPropertyDescriptors(Object.prototype[name]));const p=plan();p.pots=names.map(id=>({...pot(id),monthlyContribution:50,growth:4,fee:1}));assert.equal(validatePlan(p).valid,true);const r=project(p);for(const y of r.years){assert.equal(Object.getPrototypeOf(y.potLedger),null);assert.equal(Object.getPrototypeOf(y.balances),null);for(const id of names){const l=y.potLedger[id];assert.ok(Number.isFinite(l.closing));near(l.opening+l.contributions+l.growth-l.fees-l.withdrawals+l.transfersIn-l.transfersOut,l.closing);}}for(const m of r.months)assert.equal(Object.getPrototypeOf(m.potLedger),null);names.forEach((name,i)=>assert.deepEqual(Object.getOwnPropertyDescriptors(Object.prototype[name]),before[i]));});
-function drawPlan(annualAmount=12000){const p=plan();p.drawdown={annualAmount,inflationLinked:false};p.people[0].retirementMonth=p.startMonth;return p;}
+function drawPlan(annualAmount=12000){const p=plan();p.drawdown={mode:'pots',annualAmount,inflationLinked:false};p.people[0].retirementMonth=p.startMonth;return p;}
 test('zero target is backwards compatible and no depletion claim',()=>{const p=drawPlan(0);const r=project(p);near(r.months[0].withdrawalTarget,0);near(r.months[0].withdrawalsGross,0);assert.equal(r.firstUnmetWithdrawal,null);near(r.months.at(-1).total,10000);});
 test('annual target genuinely removes monthly cash and exact depletion is not unmet until next month',()=>{const p=drawPlan();const r=project(p);near(r.months[0].withdrawalTarget,1000);near(r.months[0].recurringWithdrawalsGross,1000);near(r.months[0].total,9000);near(r.months[9].total,0);near(r.months[9].unmetWithdrawal,0);assert.equal(r.firstUnmetWithdrawal.month,'2027-02');near(r.firstUnmetWithdrawal.amount,1000);near(r.months[10].total,0);});
 test('partial target drains accessible funds only without negative balance',()=>{const p=drawPlan();p.pots[0].balance=1500;const r=project(p);near(r.months[1].recurringWithdrawalsGross,500);near(r.months[1].unmetWithdrawal,500);near(r.months[1].total,0);assert.equal(r.firstUnmetWithdrawal.month,'2026-05');});
@@ -49,6 +49,65 @@ test('income does not offset gross withdrawal target or cause second spending re
 test('inflation-linked target starts from plan-start purchasing power, nominal fixed',()=>{const p=drawPlan();p.endAge=62;p.people[0].retirementMonth='2027-04';p.inflation=10;p.pots[0].balance=100000;p.drawdown.inflationLinked=true;near(project(p).months[12].withdrawalTarget,1100);p.drawdown.inflationLinked=false;near(project(p).months[12].withdrawalTarget,1000);});
 test('recurring annual fields sum monthly flows and wealth reconciliation includes drawdown',()=>{const p=drawPlan();p.pots[0].growth=5;p.pots[0].fee=1;p.events=[event({amount:500})];const r=project(p);for(const y of r.years){const ms=r.months.filter(m=>Number(m.month.slice(0,4))===y.year);for(const k of ['withdrawalTarget','scheduledWithdrawalsGross','recurringWithdrawalsGross','unmetWithdrawal'])near(y[k],ms.reduce((s,m)=>s+m[k],0));near(y.opening+y.contributions+y.growth-y.fees-y.withdrawals,y.closing);}for(const m of r.months)near(m.opening+m.contributions+m.growth-m.fees-m.withdrawalsGross,m.total);});
 test('large supported drawdown remains finite and primary lookup ignores people array order',()=>{const p=drawPlan(12000000);p.people.reverse();p.pots[0].balance=100000000;const before=JSON.stringify(p);const r=project(p);near(r.months[0].withdrawalTarget,1000000);for(const m of r.months)for(const key of ['total','withdrawalsGross','withdrawalsNet','unmetWithdrawal'])assert.ok(Number.isFinite(m[key])&&m[key]>=0);assert.equal(JSON.stringify(p),before);});
-test('legacy direct model inputs without drawdown remain a zero target',()=>{const p=plan();delete p.drawdown;p.version=1;const r=project(p);near(r.months[0].withdrawalTarget,0);near(r.months[0].withdrawalsGross,0);assert.equal(r.firstUnmetWithdrawal,null);});
+test('project rejects legacy or invalid inputs until explicitly migrated',()=>{const p=plan();delete p.drawdown;p.version=1;assert.throws(()=>project(p),/Invalid plan/);const q=plan();q.drawdown.mode='unknown';assert.throws(()=>project(q),/Invalid plan/);});
 test('annual £1000 target is divided into twelve actual monthly withdrawals',()=>{const p=drawPlan(1000);const r=project(p);near(r.months[0].recurringWithdrawalsGross,1000/12);near(r.months.reduce((s,m)=>s+m.recurringWithdrawalsGross,0),1000);near(r.months.at(-1).total,9000);});
 test('event marginally above actual balance is rejected, never invented cash',()=>{const p=drawPlan(0);p.events=[event({amount:10000.0000001})];const m=project(p).months[0];near(m.withdrawalsGross,0);near(m.total,10000);assert.match(m.warnings.join(' '),/insufficient/);});
+
+function income(owner='you',monthlyAmount=400,startMonth='2026-07',type='state') {
+  return {id:`income${owner}`,name:`${owner} ${type}`,owner,type,monthlyAmount,startMonth,endMonth:'2090-01',escalation:0};
+}
+function incomePlan(annualAmount=12000) {
+  const p=drawPlan(annualAmount);p.drawdown.mode='totalIncome';p.pots[0].balance=100000;return p;
+}
+test('total income target bridges retirement to State Pension then reduces pot withdrawals',()=>{
+  const p=incomePlan();p.incomes=[income()];const r=project(p);
+  near(r.months[0].incomeTarget,1000);near(r.months[0].incomeOffset,0);near(r.months[0].withdrawalsGross,1000);
+  near(r.months[3].incomeTarget,1000);near(r.months[3].incomeOffset,400);near(r.months[3].withdrawalTarget,600);near(r.months[3].withdrawalsGross,600);
+  near(r.months[3].incomeGross+r.months[3].withdrawalsGross,1000);
+  assert.equal(r.firstUnmetWithdrawal,null);
+});
+test('combined target follows primary retirement dynamically; events before retirement execute',()=>{
+  const p=incomePlan();p.people[0].retirementMonth='2026-06';p.people[1].retirementMonth='2026-12';p.includePartner=true;p.incomes=[income('partner',300,'2026-04')];p.events=[event({amount:700})];
+  let r=project(p);near(r.months[0].incomeTarget,0);near(r.months[0].incomeOffset,0);near(r.months[0].withdrawalsGross,700);near(r.months[1].withdrawalsGross,0);near(r.months[2].withdrawalsGross,700);
+  p.people[0].retirementMonth='2026-08';r=project(p);near(r.months[2].withdrawalsGross,0);near(r.months[4].withdrawalsGross,700);
+});
+test('partner income offsets only when included, with each stream start and end honoured',()=>{
+  const p=incomePlan();p.incomes=[income('you',400,'2026-06'),{...income('partner',300,'2026-08'),endMonth:'2026-09'}];
+  near(project(p).months[4].withdrawalsGross,600);p.includePartner=true;const r=project(p);
+  near(r.months[0].withdrawalsGross,1000);near(r.months[2].withdrawalsGross,600);near(r.months[4].withdrawalsGross,300);near(r.months[6].withdrawalsGross,600);
+});
+test('no income combined mode matches pots flows and zero combined target never withdraws',()=>{
+  const p=incomePlan();const combined=project(p);p.drawdown.mode='pots';const pots=project(p);
+  for(let i=0;i<pots.months.length;i++)for(const key of ['withdrawalsGross','withdrawalsNet','withdrawalTarget','unmetWithdrawal','total','tax'])near(combined.months[i][key],pots.months[i][key]);
+  p.drawdown.mode='totalIncome';p.drawdown.annualAmount=0;p.incomes=[income('you',1000,'2026-04')];const zero=project(p);near(zero.months[0].incomeOffset,0);near(zero.months[0].withdrawalsGross,0);near(zero.months.at(-1).total,100000);assert.equal(zero.firstUnmetWithdrawal,null);
+});
+test('income above target funds it without pots, reinvestment or a depletion warning',()=>{
+  const p=incomePlan();p.pots[0].balance=0;p.incomes=[income('you',2000,'2026-04')];const r=project(p);
+  for(const m of r.months){near(m.incomeOffset,1000);near(m.withdrawalTarget,0);near(m.withdrawalsGross,0);near(m.unmetWithdrawal,0);near(m.total,0);}
+  assert.equal(r.firstUnmetWithdrawal,null);
+});
+test('actual scheduled withdrawals offset reduced pot need once with no future credit',()=>{
+  for(const amount of [300,600,1500]){const p=incomePlan();p.incomes=[income('you',400,'2026-04')];p.events=[event({amount})];const r=project(p);const m=r.months[0];near(m.withdrawalTarget,600);near(m.scheduledWithdrawalsGross,amount);near(m.recurringWithdrawalsGross,Math.max(0,600-amount));near(m.withdrawalsGross,Math.max(amount,600));near(m.incomeGross+m.withdrawalsGross,400+Math.max(amount,600));near(r.months[1].recurringWithdrawalsGross,600);}
+});
+test('rejected events and transfers never reduce combined mode required withdrawals',()=>{
+  const p=incomePlan();p.incomes=[income('you',400,'2026-04')];p.pots.push({...pot('b'),balance:0});p.events=[event({amount:100001}),event({id:'transfer',type:'transfer',toPotId:'b',amount:1500})];const m=project(p).months[0];near(m.scheduledWithdrawalsGross,0);near(m.recurringWithdrawalsGross,600);near(m.incomeGross+m.withdrawalsGross,1000);near(m.total,99400);
+});
+test('combined target inflation and income escalation both use plan start, not start dates',()=>{
+  const p=incomePlan();p.endAge=62;p.inflation=10;p.drawdown.inflationLinked=true;p.people[0].retirementMonth='2027-04';p.incomes=[{...income('you',400,'2027-04'),escalation:5}];let m=project(p).months[12];near(m.incomeTarget,1100);near(m.incomeGross,420);near(m.withdrawalTarget,680);near(m.withdrawalsGross,680);
+  p.drawdown.inflationLinked=false;m=project(p).months[12];near(m.incomeTarget,1000);near(m.withdrawalTarget,580);
+});
+test('combined target partial depletion and locked pension access report only required pot gap',()=>{
+  const p=incomePlan();p.people[0].dob='1971-05-01';p.endAge=56;p.incomes=[income('you',400,'2026-04')];p.pots=[{...pot('cash'),balance:200},{...pot('pension'),type:'sipp',accessAge:55,balance:10000}];const r=project(p);
+  near(r.months[0].withdrawalTarget,600);near(r.months[0].withdrawalsGross,200);near(r.months[0].unmetWithdrawal,400);near(r.firstUnmetWithdrawal.amount,400);near(r.firstUnmetWithdrawal.locked,10000);near(r.months[1].withdrawalsGross,600);near(r.months[1].unmetWithdrawal,0);
+});
+test('combined income retains owner tax and pension allowance once, without net gross-up',()=>{
+  const p=incomePlan(48000);p.includePartner=true;p.incomes=[income('you',2000,'2026-04'),income('partner',1000,'2026-04')];p.pots=[{...pot('partnerPension'),owner:'partner',type:'sipp',balance:100000}];p.events=[event({potId:'partnerPension',amount:500})];p.monthlySpending=4000;
+  const r=project(p),tax=incomeTax(24000)+incomeTax(12000+9000);
+  near(r.months.reduce((s,m)=>s+m.tax,0),tax);near(r.months.reduce((s,m)=>s+m.withdrawalsGross,0),12000);near(r.months.reduce((s,m)=>s+m.incomeNet+m.withdrawalsNet,0),48000-tax);
+  near(r.months[0].scheduledWithdrawalsGross,500);near(r.months[0].recurringWithdrawalsGross,500);assert.ok(r.months[0].shortfall>0);assert.equal(r.firstUnmetWithdrawal,null);
+});
+test('combined flows reconcile every scenario monthly and annually without extra spending deductions',()=>{
+  const p=incomePlan(24000);p.pots[0].growth=5;p.pots[0].fee=1;p.incomes=[income('you',400,'2026-04'),{...income('partner',300,'2026-08','db'),id:'other',owner:'you'}];p.events=[event({amount:700})];p.monthlySpending=9000;
+  for(const scenario of ['lower','base','higher']){const r=project(p,{scenario});for(const m of r.months){near(m.incomeTarget,m.incomeOffset+m.withdrawalTarget);near(m.withdrawalsGross,m.scheduledWithdrawalsGross+m.recurringWithdrawalsGross);near(m.opening+m.contributions+m.growth-m.fees-m.withdrawalsGross,m.total);near(m.incomeNet+m.withdrawalsNet+m.tax,m.incomeGross+m.withdrawalsGross);}for(const y of r.years){const ms=r.months.filter(m=>Number(m.month.slice(0,4))===y.year);for(const key of ['incomeTarget','incomeOffset','withdrawalTarget','incomeGross','withdrawalsNet','tax','unmetWithdrawal'])near(y[key],ms.reduce((s,m)=>s+m[key],0));near(y.opening+y.contributions+y.growth-y.fees-y.withdrawals,y.closing);}}
+});
+test('model prominently discloses frozen rules and future April 2027 changes',()=>{const r=project(incomePlan());assert.match(r.warnings.join(' '),/2026\/27.*April 2027/);assert.match(r.assumptions.join(' '),/not a promised net income/);});

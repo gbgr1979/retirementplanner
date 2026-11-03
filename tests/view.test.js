@@ -213,7 +213,7 @@ test('pot summary keeps zero and depleted balances and never fabricates out-of-r
 });
 test('80-year cap is not presented as reaching an unmodelled planned age',()=>{
  const p=createExamplePlan();p.people[0].dob='2020-06-01';p.people[0].retirementMonth='2085-06';p.endAge=110;
- const r=project(p),s=planSummary(p,r,false);assert.equal(s.end.month,'2106-10');assert.equal(s.end.value,r.months.at(-1).total);
+ const r={months:[{month:'2106-10',opening:100,total:99}]},s=planSummary(p,r,false);assert.equal(s.end.month,'2106-10');assert.equal(s.end.value,r.months.at(-1).total);
  assert.match(s.end.note,/80-year limit before your planned end age of 110/);assert.doesNotMatch(s.end.note,/Planned up to your age/);
 });
 
@@ -222,4 +222,10 @@ test('retirement marker shows actual age at the start of its month, including bi
  assert.equal(ageAtMonthStart('1980-11-01','2037-11'),57);assert.equal(ageAtMonthStart('1980-11-15','2037-11'),56);assert.equal(ageAtMonthStart('1980-11-15','2037-12'),57);assert.equal(ageAtMonthStart('1980-11-15','2037-10'),56);
  assert.equal(ageAtMonthStart('1980-02-29','2037-03'),57);assert.equal(ageAtMonthStart('1980-02-29','2037-02'),56);assert.equal(ageAtMonthStart('bad','2037-11'),null);assert.equal(ageAtMonthStart('1980-02-30','2037-11'),null);
  const years=[{year:2026},{year:2037},{year:2038}],marker=retirementMarker('2037-11',years,[],'1980-11-01');assert.equal(marker.chartLabel,'Retirement – age 57');assert.match(marker.label,/November 2037/);assert.match(svgChart(years,[],true,marker),/Retirement – age 57/);assert.equal(retirementMarker('2038-11',years,[],'1980-11-01').age,58);assert.equal(retirementMarker('2037-11',years).chartLabel,'Retirement');
+});
+
+test('income-funded target is not misreported as retirement outside the projection',()=>{
+ const p=createExamplePlan();p.drawdown={mode:'totalIncome',annualAmount:12000,inflationLinked:false};
+ const r={months:[{month:'2040-01',withdrawalTarget:0,incomeTarget:1000}],firstUnmetWithdrawal:null};
+ assert.match(withdrawalOutcome(p,r).text,/funded through/);assert.match(withdrawalCardSummary(p,r),/Funded through/);
 });

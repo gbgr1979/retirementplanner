@@ -5,7 +5,7 @@ const monthValid = value => typeof value === 'string' && /^(19\d{2}|20\d{2}|21\d
 const numeric = (value,min,max,integer=false) => typeof value === 'number' && Number.isFinite(value) && value>=min && value<=max && (!integer || Number.isInteger(value));
 /** In-memory draft only. Ages intentionally start blank; nothing is saved automatically. */
 export function createWizardDraft(startMonth = new Date().toISOString().slice(0,7)) {
-  return {startMonth, includePartner:false, you:{age:'',retirementAge:67}, partner:{age:'',retirementAge:67}, monthlySpending:2000, inflation:2.5,
+  return {startMonth, includePartner:false, you:{age:'',retirementAge:67,statePension:{enabled:false,weeklyAmount:'',startMonth:'',escalation:2.5}}, partner:{age:'',retirementAge:67,statePension:{enabled:false,weeklyAmount:'',startMonth:'',escalation:2.5}}, monthlySpending:2000, inflation:2.5,
     pots:OWNERS.flatMap(owner => TYPES.map(([suffix,type,label,growth,fee]) => ({id:`${owner}-${suffix}`,owner,type,name:`${owner==='you'?'Your':"Partner’s"} ${label}`,balance:0,monthlyContribution:0,employerContribution:0,growth,fee})))};
 }
 /** Field paths align with form inputs. Review (step 3) checks all earlier steps. */
@@ -28,12 +28,27 @@ export function validateWizardStep(draft,step) {
       if (!numeric(person?.retirementAge,18,100,true)) error(`${owner}.retirementAge`,'Enter a whole-number retirement age up to 100.');
       else if (numeric(person?.age,18,90,true) && person.retirementAge<person.age) error(`${owner}.retirementAge`,'Retirement age must be your current age or later.');
       if (numeric(person?.age,18,90,true) && monthValid(draft.startMonth) && Number(draft.startMonth.slice(0,4))-person.age<1900) error(`${owner}.age`,'This age would put your approximate birth date before the supported year 1900.');
+
     }
     if (numeric(draft.you?.age,18,90,true) && numeric(draft.you?.retirementAge,18,100,true) && draft.you.retirementAge>=draft.you.age+80) error('you.retirementAge','Choose a retirement age that leaves at least one later year within the 80-year projection limit.');
     if (monthValid(draft.startMonth) && numeric(draft.you?.age,18,90,true) && numeric(draft.you?.retirementAge,18,100,true)) {
       const endAge=Math.min(Math.max(95,draft.you.retirementAge+5),draft.you.age+80,110);
       if (Number(draft.startMonth.slice(0,4))-draft.you.age+endAge>2250) error('startMonth','The projection would run beyond the supported year 2250.');
     }
+  }
+  if (step===1) for (const owner of activeOwners) {
+    const person=draft[owner];
+      const pension=person?.statePension, prefix=`${owner}.statePension`;
+      if (!pension || typeof pension!=='object' || Array.isArray(pension) || typeof pension.enabled!=='boolean') error(`${prefix}.enabled`,'Choose whether to include your State Pension forecast.');
+      else if (pension.enabled===true) {
+        if (!numeric(pension.weeklyAmount,0,10000)) error(`${prefix}.weeklyAmount`,'Enter your weekly State Pension forecast from £0 to £10,000.');
+        if (!monthValid(pension.startMonth)) error(`${prefix}.startMonth`,'Enter an explicit valid State Pension start month.');
+        else if (numeric(person.age,18,90,true) && monthValid(draft.startMonth)) {
+          const birthMonth=`${Number(draft.startMonth.slice(0,4))-person.age}-${draft.startMonth.slice(5,7)}`;
+          if (pension.startMonth<=birthMonth) error(`${prefix}.startMonth`,'State Pension start month must be after the birth month.');
+        }
+        if (!numeric(pension.escalation,0,15)) error(`${prefix}.escalation`,'Enter an annual State Pension increase assumption from 0% to 15%.');
+      }
   }
   if (step===1 || step===2) {
     if (!Array.isArray(draft.pots) || draft.pots.length!==6) error('pots','Setup needs three pots for each person. Please restart setup.');
@@ -70,8 +85,15 @@ export function buildWizardPlan(draft) {
   const partner=person('partner',draft.includePartner?draft.partner:draft.you);
   if (!draft.includePartner) partner.name='Partner (details not entered)';
   const people=[you,partner], active=draft.includePartner?OWNERS:['you'];
-  const plan={version:PLAN_VERSION,drawdown:{annualAmount:draft.monthlySpending*12,inflationLinked:true},name:'My retirement plan',startMonth:draft.startMonth,endAge:Math.min(Math.max(95,draft.you.retirementAge+5),draft.you.age+80,110),includePartner:draft.includePartner,inflation:draft.inflation,scenarioSpread:2,monthlySpending:draft.monthlySpending,spendingStart:you.retirementMonth,people,
+  const plan={version:PLAN_VERSION,drawdown:{mode:'pots',annualAmount:draft.monthlySpending*12,inflationLinked:true},name:'My retirement plan',startMonth:draft.startMonth,endAge:Math.min(Math.max(95,draft.you.retirementAge+5),draft.you.age+80,110),includePartner:draft.includePartner,inflation:draft.inflation,scenarioSpread:2,monthlySpending:draft.monthlySpending,spendingStart:you.retirementMonth,people,
     pots:active.flatMap(owner=>TYPES.map(([suffix])=>draft.pots.find(p=>p.id===`${owner}-${suffix}`))).map(p=>({id:p.id,name:p.name,owner:p.owner,type:p.type,balance:p.balance,monthlyContribution:p.monthlyContribution,employerContribution:p.employerContribution,contributionBasis:'gross',growth:p.growth,fee:p.fee,contributionStart:draft.startMonth,contributionEnd:people.find(person=>person.id===p.owner).retirementMonth,accessAge:55})),incomes:[],events:[]};
+  const endIndex=(startYear-draft.you.age+plan.endAge)*12+Number(month)-2;
+  const lastMonth=`${Math.floor(endIndex/12)}-${String(endIndex%12+1).padStart(2,'0')}`;
+  plan.incomes=active.filter(owner=>draft[owner].statePension.enabled===true && draft[owner].statePension.weeklyAmount>0).map(owner=>{
+    const forecast=draft[owner].statePension;
+    return {id:`state-${owner}`,name:owner==='you'?'Your State Pension forecast':'Partner’s State Pension forecast',owner,type:'state',monthlyAmount:forecast.weeklyAmount*52/12,startMonth:forecast.startMonth,endMonth:forecast.startMonth<=lastMonth?lastMonth:'2250-12',escalation:forecast.escalation};
+  });
+  if (plan.incomes.length) plan.drawdown.mode='totalIncome';
   const checked=validatePlan(plan);
   if (!checked.valid) throw new Error(checked.errors.join('\n'));
   return plan;
