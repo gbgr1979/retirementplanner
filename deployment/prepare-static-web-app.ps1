@@ -6,7 +6,7 @@ if ([string]::IsNullOrWhiteSpace($SiteRoot)) { $SiteRoot = Split-Path -Parent $P
 $root = (Resolve-Path -LiteralPath $SiteRoot).Path
 # Exact public payload. Never recursively copy src or personal plan files.
 $files = @('index.html', 'styles.css', 'staticwebapp.config.json',
-    'src/app.js', 'src/model.js', 'src/plan.js', 'src/view.js', 'src/wizard-plan.js', 'src/wizard-ui.js')
+    'src/app.js', 'src/model.js', 'src/plan.js', 'src/view.js', 'src/wizard-plan.js', 'src/wizard-ui.js', 'src/money-input.js')
 foreach ($relative in @('src') + $files) {
     $item = Get-Item -LiteralPath (Join-Path $root $relative) -Force
     if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw "Linked build input is forbidden: $relative" }
@@ -34,5 +34,5 @@ foreach ($relative in $files) {
 }
 $actual = @(Get-ChildItem -LiteralPath $destination -Recurse -File -Force | ForEach-Object { $_.FullName.Substring($destination.Length + 1).Replace('\', '/') })
 if (@(Compare-Object ($files | Sort-Object) ($actual | Sort-Object)).Count -ne 0) { throw 'Unexpected files in deployment payload.' }
-Write-Host 'Prepared and verified nine public assets. No Node.js or npm required.'
+Write-Host 'Prepared and verified ten public assets. No Node.js or npm required.'
 Write-Output $destination

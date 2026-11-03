@@ -43,3 +43,65 @@ export function withdrawalOutcome(plan,result) {
  if(gap)return {hasGap:true,text:`First withdrawal shortfall: ${date(gap.month)}. ${gap.locked>0.01?'Some pension funds are still locked — this is not the same as all your money running out.':gap.total<=0.01?'Your modelled pots are depleted at that point.':'The accessible pots cannot meet that month’s target.'} Try a lower amount to compare.`};
  return {hasGap:false,text:`This target is funded through ${date(active.at(-1).month)} in this scenario. That is the end of the projection, not a guarantee of sustainable income.`};
 }
+
+const monthNumber = value => Number(value.slice(0,4))*12+Number(value.slice(5,7))-1;
+const monthString = value => `${Math.floor(value/12)}-${String(value%12+1).padStart(2,'0')}`;
+const readableMonth = value => new Date(`${value}-01T00:00:00Z`).toLocaleDateString('en-GB',{month:'long',year:'numeric',timeZone:'UTC'});
+/** The model ends immediately before the primary person's end-age birthday month. */
+export function retirementDateLinks(plan) {
+ const retirementMonth=plan.people.find(person=>person.id==='you').retirementMonth;
+ return {potIds:plan.pots.filter(pot=>pot.owner==='you'&&pot.contributionEnd===retirementMonth).map(pot=>pot.id),spending:plan.spendingStart===retirementMonth};
+}
+export function retirementYearControls(plan,links=retirementDateLinks(plan)) {
+ const primary=plan.people.find(person=>person.id==='you');
+ const current=monthNumber(primary.retirementMonth), start=monthNumber(plan.startMonth);
+ const min=Math.max(monthNumber(primary.dob)+18*12,start);
+ const max=Math.min(monthNumber(primary.dob)+plan.endAge*12,start+80*12)-1;
+ const target=direction=>{
+  const next=current+direction*12;
+  // Old plans can start outside the horizon. Allow exact annual steps inward,
+  // never farther out, and never leap across the whole valid interval.
+  const allowed=current<min?direction===1&&next<=max
+   :current>max?direction===-1&&next>=min:next>=min&&next<=max;
+  if(!allowed)return current;
+  const nextText=monthString(next);
+  if(plan.pots.some(pot=>pot.owner==='you'&&links.potIds.includes(pot.id)&&nextText<pot.contributionStart))return current;
+  return next;
+ };
+ return {earlierMonth:monthString(target(-1)),laterMonth:monthString(target(1)),minMonth:monthString(min),maxMonth:monthString(max)};
+}
+export function adjustRetirementMonth(plan,direction,links=retirementDateLinks(plan)) {
+ if(direction!==-1&&direction!==1)throw new Error('Retirement adjustment must be plus or minus one year.');
+ const controls=retirementYearControls(plan,links);
+ return direction===-1?controls.earlierMonth:controls.laterMonth;
+}
+/** Move linked wizard dates only. Events, incomes, custom dates and partner stay fixed. */
+export function shiftRetirementYear(plan,direction,links=retirementDateLinks(plan)) {
+ const oldMonth=plan.people.find(person=>person.id==='you').retirementMonth;
+ const nextMonth=adjustRetirementMonth(plan,direction,links);
+ if(nextMonth===oldMonth)return plan;
+ return {...plan,
+  people:plan.people.map(person=>person.id==='you'?{...person,retirementMonth:nextMonth}:person),
+  spendingStart:links.spending?nextMonth:plan.spendingStart,
+  pots:plan.pots.map(pot=>pot.owner==='you'&&links.potIds.includes(pot.id)
+   ?{...pot,contributionEnd:nextMonth}:pot)
+ };
+}
+/** Annual samples cannot locate a monthly balance: deliberately mark the year column. */
+export function retirementMarker(retirementMonth,years,months=[]) {
+ const year=Number(retirementMonth.slice(0,4));
+ const index=years.findIndex(row=>Number(row.year)===year);
+ const inMonths=!months.length||(retirementMonth>=months[0].month&&retirementMonth<=months.at(-1).month);
+ const visible=index>=0&&inMonths;
+ const label=`Your retirement: ${readableMonth(retirementMonth)}`;
+ return {visible,index:visible?index:null,position:visible?index/Math.max(1,years.length-1):null,label,
+  note:visible?`${label}. The line marks the retirement year’s plotted balance, not an exact monthly balance.`
+   :`${label} is outside the projection. No retirement line is shown.`};
+}
+
+/** Preserve inferred matching dates across comparisons; re-link only explicitly edited dates. */
+export function reconcileRetirementLinks(previous,candidate,links) {
+ const retirement=candidate.people.find(p=>p.id==='you').retirementMonth;
+ if(retirement!==previous.people.find(p=>p.id==='you').retirementMonth)return retirementDateLinks(candidate);
+ return {spending:candidate.spendingStart!==previous.spendingStart?candidate.spendingStart===retirement:links.spending,potIds:candidate.pots.filter(p=>{const old=previous.pots.find(o=>o.id===p.id);return !old||old.owner!==p.owner||old.contributionEnd!==p.contributionEnd?p.owner==='you'&&p.contributionEnd===retirement:links.potIds.includes(p.id);}).map(p=>p.id)};
+}

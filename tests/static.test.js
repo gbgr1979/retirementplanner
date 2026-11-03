@@ -16,3 +16,10 @@ test('landing copy describes starting assets, projections and planned withdrawal
  const html=await readFile('index.html','utf8');const landing=html.match(/<section id="landing"[\s\S]*?<\/section>/)[0];
  assert.match(landing,/savings, investments and pensions today/);assert.match(landing,/what they could be worth/);assert.match(landing,/planned withdrawals change your balances over time/);assert.doesNotMatch(landing,/safe withdrawal|sustainable withdrawal|guarantee|how long your money will last/i);
 });
+
+test('currency presentation is shared across editor wizard and annual control without changing model schema',async()=>{
+ const app=await readFile('src/app.js','utf8'),wizard=await readFile('src/wizard-ui.js','utf8'),html=await readFile('index.html','utf8');
+ for(const source of [app,wizard]){assert.match(source,/formatMoneyValue/);assert.match(source,/parseMoneyInput/);assert.match(source,/label.includes\('£'\)/);assert.match(source,/data-money/);}
+ assert.match(html,/id="withdrawal-amount" type="text" data-money inputmode="decimal"/);
+ const {staticFiles}=await import('../scripts/static-files.mjs');assert.ok(staticFiles.includes('src/money-input.js'));
+});
