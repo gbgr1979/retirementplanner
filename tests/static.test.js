@@ -20,18 +20,18 @@ test('landing copy describes starting assets, projections and planned withdrawal
 test('currency presentation is shared across editor wizard and annual control without changing model schema',async()=>{
  const app=await readFile('src/app.js','utf8'),wizard=await readFile('src/wizard-ui.js','utf8'),html=await readFile('index.html','utf8');
  for(const source of [app,wizard]){assert.match(source,/formatMoneyValue/);assert.match(source,/parseMoneyInput/);assert.match(source,/label.includes\('£'\)/);assert.match(source,/data-money/);}
- assert.match(html,/id="withdrawal-amount" type="text" data-money inputmode="decimal"/);
+ assert.match(await readFile('src/income-stage-ui.js','utf8'),/type="text" data-money inputmode="decimal"/);
  const {staticFiles}=await import('../scripts/static-files.mjs');assert.ok(staticFiles.includes('src/money-input.js'));
 });
 
-test('file loading does not infer ambiguous retirement date links',async()=>{const app=await readFile('src/app.js','utf8');assert.match(app,/plan=loaded;selectedStage=-1;retirementLinks=\{potIds:\[\],spending:false\}/);});
+test('file loading does not infer ambiguous retirement date links',async()=>{const app=await readFile('src/app.js','utf8');assert.match(app,/plan=loaded;incomeRanges.reset\(plan\);retirementLinks=\{potIds:\[\],spending:false\}/);});
 
 test('retirement controls sit inside annual withdrawals, not the wealth chart',async()=>{
  const html=await readFile('index.html','utf8'),withdrawal=html.slice(html.indexOf('<article class="withdrawal-card"'),html.indexOf('</article>',html.indexOf('<article class="withdrawal-card"')));
  assert.match(withdrawal,/id="retirement-minus"/);assert.match(withdrawal,/id="retirement-plus"/);assert.equal((html.match(/id="retirement-date"/g)||[]).length,1);assert.match(html,/id="projection-timeline"/);
 });
 
-test('unified controls keep short critical hints and move detailed rules into labelled help modal',async()=>{const html=await readFile('index.html','utf8'),card=html.slice(html.indexOf('<article class="withdrawal-card"'),html.indexOf('</article>',html.indexOf('<article class="withdrawal-card"')));assert.match(card,/class="plan-controls"/);assert.equal((card.match(/class="plan-control"/g)||[]).length,5);assert.match(card,/Before tax/);assert.doesNotMatch(card,/contribution end dates|tax-optimised|retirement-bounds/);assert.match(html,/<dialog id="plan-help-dialog"[^>]*aria-labelledby="plan-help-title"/);for(const id of ['withdrawal-basis','withdrawal-inflation','retirement-bounds','withdrawal-detail-status','plan-help-close'])assert.match(html.slice(html.indexOf('<dialog id="plan-help-dialog"')),new RegExp(`id="${id}"`));});
+test('unified controls keep short critical hints and move detailed rules into labelled help modal',async()=>{const html=await readFile('index.html','utf8'),card=html.slice(html.indexOf('<article class="withdrawal-card"'),html.indexOf('</article>',html.indexOf('<article class="withdrawal-card"')));assert.match(card,/class="plan-controls"/);assert.equal((card.match(/class="plan-control"/g)||[]).length,4);assert.match(card,/Before tax/);assert.doesNotMatch(card,/contribution end dates|tax-optimised|retirement-bounds/);assert.match(html,/<dialog id="plan-help-dialog"[^>]*aria-labelledby="plan-help-title"/);for(const id of ['withdrawal-basis','withdrawal-inflation','retirement-bounds','withdrawal-detail-status','plan-help-close'])assert.match(html.slice(html.indexOf('<dialog id="plan-help-dialog"')),new RegExp(`id="${id}"`));});
 
 test('summary presents only retirement and remaining plan-end pots while shortfall remains visible',async()=>{const app=await readFile('src/app.js','utf8'),html=await readFile('index.html','utf8');const metrics=app.slice(app.indexOf("$('metrics').innerHTML="),app.indexOf("$('summary-retirement-help')"));assert.equal((metrics.match(/<div>/g)||[]).length,2);assert.match(metrics,/left at plan end/);assert.doesNotMatch(metrics,/Accessible that year|First unmet withdrawal/);assert.match(html,/id="withdrawal-status"/);assert.match(html,/not a prediction of death/);});
 
@@ -51,8 +51,8 @@ test('growth row has three matched steppers and explicit base-rate semantics',as
 
 test('income stages and pension annotations are shipped while obsolete scenario UI is removed',async()=>{
  const html=await readFile('index.html','utf8'),app=await readFile('src/app.js','utf8');
- for(const id of ['edit-income-stages','income-stage-select','income-stages-dialog','projection-event-notes'])assert.ok(html.includes(`id="${id}"`));
+ for(const id of ['income-ranges','projection-event-notes'])assert.ok(html.includes(`id="${id}"`));
  assert.doesNotMatch(html,/id="scenario"|id="scenario-note"/);assert.doesNotMatch(app,/\$\('scenario'\)/);assert.match(app,/project\(plan,\{scenario:'base'\}\)/);
- assert.match(app,/setSelectedAmount\(candidate/);assert.match(app,/pensionEvents.markers/);
+ assert.match(app,/incomeRanges.readPlan\(readDetailedEditor\(\)\)/);assert.doesNotMatch(html,/income-stage-select|income-stages-dialog|withdrawal-amount/);assert.match(app,/pensionEvents.markers/);
  const {staticFiles}=await import('../scripts/static-files.mjs');for(const file of ['src/income-stages.js','src/income-stage-ui.js'])assert.ok(staticFiles.includes(file));
 });
