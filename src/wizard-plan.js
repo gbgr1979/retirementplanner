@@ -1,4 +1,4 @@
-import {validatePlan} from './plan.js';
+import {validatePlan, PLAN_VERSION} from './plan.js';
 const OWNERS = ['you', 'partner'];
 const TYPES = [['savings','savings','cash savings',2,0],['isa','stocksIsa','stocks & shares ISA',5,0.3],['pension','sipp','pension',5,0.5]];
 const monthValid = value => typeof value === 'string' && /^(19\d{2}|20\d{2}|21\d{2}|22[0-4]\d|2250)-(0[1-9]|1[0-2])$/.test(value);
@@ -70,7 +70,7 @@ export function buildWizardPlan(draft) {
   const partner=person('partner',draft.includePartner?draft.partner:draft.you);
   if (!draft.includePartner) partner.name='Partner (details not entered)';
   const people=[you,partner], active=draft.includePartner?OWNERS:['you'];
-  const plan={version:1,name:'My retirement plan',startMonth:draft.startMonth,endAge:Math.min(Math.max(95,draft.you.retirementAge+5),draft.you.age+80,110),includePartner:draft.includePartner,inflation:draft.inflation,scenarioSpread:2,monthlySpending:draft.monthlySpending,spendingStart:you.retirementMonth,people,
+  const plan={version:PLAN_VERSION,drawdown:{annualAmount:draft.monthlySpending*12,inflationLinked:true},name:'My retirement plan',startMonth:draft.startMonth,endAge:Math.min(Math.max(95,draft.you.retirementAge+5),draft.you.age+80,110),includePartner:draft.includePartner,inflation:draft.inflation,scenarioSpread:2,monthlySpending:draft.monthlySpending,spendingStart:you.retirementMonth,people,
     pots:active.flatMap(owner=>TYPES.map(([suffix])=>draft.pots.find(p=>p.id===`${owner}-${suffix}`))).map(p=>({id:p.id,name:p.name,owner:p.owner,type:p.type,balance:p.balance,monthlyContribution:p.monthlyContribution,employerContribution:p.employerContribution,contributionBasis:'gross',growth:p.growth,fee:p.fee,contributionStart:draft.startMonth,contributionEnd:people.find(person=>person.id===p.owner).retirementMonth,accessAge:55})),incomes:[],events:[]};
   const checked=validatePlan(plan);
   if (!checked.valid) throw new Error(checked.errors.join('\n'));

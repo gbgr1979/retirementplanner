@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {project} from '../src/model.js';
 import {createExamplePlan, validatePlan, parsePlan, serializePlan, MAX_PLAN_BYTES} from '../src/plan.js';
 const alter = fn => {const p = createExamplePlan(); fn(p); return p;};
 const invalid = (plan, pattern) => {const result = validatePlan(plan); assert.equal(result.valid, false); if (pattern) assert.match(result.errors.join('\n'), pattern);};
@@ -14,7 +15,7 @@ test('save/load roundtrip includes both people, pots, events, settings and incom
 });
 test('validation never mutates existing plan', () => {const p = createExamplePlan(); const before = JSON.stringify(p); validatePlan(p); serializePlan(p); assert.equal(JSON.stringify(p), before);});
 test('unsupported versions and missing/unknown fields rejected', () => {
-  invalid(alter(p => p.version = 2), /Unsupported plan version/);
+  invalid(alter(p => p.version = 3), /Unsupported plan version/);
   invalid(alter(p => p.version = {toString: 1}), /Unsupported plan version/);
   invalid(alter(p => delete p.inflation), /inflation is required/);
   invalid(alter(p => p.extra = true), /extra is not supported/);
@@ -24,7 +25,7 @@ test('JSON malformed, unsafe prototype keys and large files rejected', () => {
   assert.throws(() => parsePlan('{'), /valid JSON/);
   assert.throws(() => parsePlan(' '.repeat(MAX_PLAN_BYTES + 1)), /1 MB/);
   const p = JSON.stringify(createExamplePlan());
-  assert.throws(() => parsePlan(p.replace('"version":1','"__proto__":{"polluted":true},"version":1')), /Unsafe property/);
+  assert.throws(() => parsePlan(p.replace('"version":2','"__proto__":{"polluted":true},"version":2')), /Unsafe property/);
   assert.equal({}.polluted, undefined);
   invalid(alter(p => p.pots[0].constructor = {}), /Unsafe property/);
   invalid(alter(p => p.pots[0].id = 'constructor'), /safe identifier/);
@@ -78,3 +79,24 @@ test('nonpension contributions cannot receive tax relief or employer additions',
   assert.equal(validatePlan(alter(p => p.pots[2].contributionBasis = 'netRelief')).valid,true);
 });
 test('bad load leaves caller data unchanged', () => {const existing = createExamplePlan(); const saved = serializePlan(existing); assert.throws(() => parsePlan('{"version":2}')); assert.equal(serializePlan(existing), saved);});
+
+const legacyExample = () => { const p=createExamplePlan(); p.version=1; delete p.drawdown; return p; };
+test('v1 load migrates without mutating original and preserves old no-automatic-drawdown meaning',()=>{
+ const legacy=legacyExample(), original=structuredClone(legacy), text=JSON.stringify(legacy);
+ const current=parsePlan(text);assert.deepEqual(project(current),project(legacy));assert.equal(current.version,2);assert.deepEqual(current.drawdown,{annualAmount:0,inflationLinked:true});
+ const restored=structuredClone(current);restored.version=1;delete restored.drawdown;assert.deepEqual(restored,original);assert.deepEqual(legacy,original);
+ assert.equal(validatePlan(current).valid,true);assert.deepEqual(parsePlan(serializePlan(current)),current);assert.equal(validatePlan(legacy).valid,false);assert.throws(()=>serializePlan(legacy),/version/);
+});
+test('legacy fields are strictly validated BEFORE migration',()=>{
+ for(const change of [p=>p.drawdown={annualAmount:900,inflationLinked:true},p=>p.unknown=1,p=>delete p.pots,p=>p.people[0].extra=true,p=>p.pots[0].balance=-1]) {
+  const legacy=legacyExample();change(legacy);assert.throws(()=>parsePlan(JSON.stringify(legacy)));
+ }
+ const text=JSON.stringify(legacyExample());assert.throws(()=>parsePlan(text.replace('"version":1','"version":1,"__proto__":{"polluted":true}')),/Unsafe property/);assert.equal({}.polluted,undefined);
+});
+test('v2 drawdown is required, finite, bounded and strict',()=>{
+ invalid(alter(p=>delete p.drawdown),/drawdown/);invalid(alter(p=>p.drawdown=null),/drawdown/);
+ for(const value of [-1,12000001,Infinity,NaN,'100',null]) invalid(alter(p=>p.drawdown.annualAmount=value),/annualAmount/);
+ for(const value of [0,12000000]) {const p=alter(p=>p.drawdown.annualAmount=value);assert.equal(validatePlan(p).valid,true);assert.deepEqual(parsePlan(serializePlan(p)),p);}
+ invalid(alter(p=>p.drawdown.inflationLinked=1),/inflationLinked/);invalid(alter(p=>p.drawdown.extra=true),/not supported/);
+ assert.throws(()=>parsePlan(JSON.stringify(createExamplePlan()).replace('"annualAmount":0','"annualAmount":1e999')),/annualAmount/);
+});
