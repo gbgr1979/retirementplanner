@@ -23,3 +23,7 @@ tr.ledger-total th,tr.ledger-total td{font-weight:bold;border-top:2px solid #b8c
 .state-pension-shortcut{display:block;width:100%;margin-top:17px;text-align:left;background:#edf1e6}.editor-heading>.help{margin-bottom:0}.wizard-state:first-child{border-top:0;margin-top:0;padding-top:0}.wizard-state+.wizard-pot{border-top:1px solid #dfe5d8;margin-top:22px;padding-top:20px}
 
 .wizard-default-details{margin:8px 0 0}.wizard-default-details>summary{font-size:12px;padding:10px 0}.wizard-default-details .help{margin-top:0}
+
+.growth-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:24px;padding-top:22px;border-top:1px solid #c8d5bf}.growth-stepper .plan-value{overflow:hidden}.growth-stepper output{font-size:23px;overflow-wrap:anywhere}.growth-stepper output.growth-mixed{font-size:20px}.growth-controls .plan-control-hint{overflow-wrap:anywhere}.growth-basis{margin-top:12px}.growth-stepper{grid-template-columns:40px minmax(0,1fr) 40px}.growth-stepper>button{width:40px}
+@container(max-width:580px){.growth-controls{grid-template-columns:1fr;gap:18px}.growth-stepper{grid-template-columns:44px minmax(0,1fr) 44px}.growth-stepper>button{width:44px}.growth-stepper output{font-size:27px}}
+@media(max-width:580px){.growth-controls{grid-template-columns:1fr}}
