@@ -54,7 +54,44 @@ test('fresh pension uses statutory access age rather than inventing a 57 minimum
 
 test('excluded partner placeholder cannot be mistaken for entered details',()=>{const draft=createWizardDraft('2026-11');draft.you.age=47;const plan=buildWizardPlan(draft);assert.equal(plan.people.find(p=>p.id==='partner').name,'Partner (details not entered)');assert.equal(plan.includePartner,false);});
 
-test('wizard v2 uses annual gross draw target from monthly spending, without assumed pension income',()=>{
- const d=ready();d.monthlySpending=2400;const p=buildWizardPlan(d);assert.equal(p.version,2);assert.deepEqual(p.drawdown,{annualAmount:28800,inflationLinked:true});assert.deepEqual(p.incomes,[]);assert.deepEqual(p.events,[]);
+test('wizard v3 uses annual gross draw target from monthly spending, without assumed pension income',()=>{
+ const d=ready();d.monthlySpending=2400;const p=buildWizardPlan(d);assert.equal(p.version,3);assert.deepEqual(p.drawdown,{mode:'pots',annualAmount:28800,inflationLinked:true});assert.deepEqual(p.incomes,[]);assert.deepEqual(p.events,[]);
  d.monthlySpending=0;assert.equal(buildWizardPlan(d).drawdown.annualAmount,0);d.monthlySpending=1000000;assert.equal(buildWizardPlan(d).drawdown.annualAmount,12000000);
+});
+
+const forecast=(d,owner='you',overrides={})=>Object.assign(d[owner].statePension,{enabled:true,weeklyAmount:230.25,startMonth:'2046-11',escalation:2.5},overrides);
+test('State Pension defaults are separate, blank, opted out and have no assumed entitlement',()=>{
+ const d=ready();assert.deepEqual(d.you.statePension,{enabled:false,weeklyAmount:'',startMonth:'',escalation:2.5});assert.deepEqual(d.partner.statePension,d.you.statePension);
+ d.you.statePension.weeklyAmount=12;assert.equal(d.partner.statePension.weeklyAmount,'');assert.equal(createWizardDraft().you.statePension.weeklyAmount,'');
+ assert.deepEqual(buildWizardPlan(d).incomes,[]);assert.equal(buildWizardPlan(d).drawdown.mode,'pots');
+});
+test('explicit forecast builds exactly one deterministic income with weekly annual conversion',()=>{
+ const d=ready();forecast(d);const before=structuredClone(d), p=buildWizardPlan(d), income=p.incomes[0];
+ assert.equal(p.incomes.length,1);assert.equal(income.id,'state-you');assert.equal(income.owner,'you');assert.equal(income.type,'state');assert.equal(income.monthlyAmount,230.25*52/12);assert.equal(income.startMonth,'2046-11');assert.equal(income.endMonth,'2074-10');assert.equal(income.escalation,2.5);assert.equal(p.drawdown.mode,'totalIncome');assert.equal(p.drawdown.annualAmount,24000);
+ assert.deepEqual(buildWizardPlan(d),p);assert.deepEqual(d,before);assert.deepEqual(parsePlan(serializePlan(p)),p);
+ p.incomes[0].monthlyAmount=1;assert.equal(buildWizardPlan(d).incomes[0].monthlyAmount,230.25*52/12);
+});
+test('disabled forecasts retain but ignore invalid values, zero creates no income',()=>{
+ const d=ready();forecast(d,'you',{enabled:false,weeklyAmount:NaN,startMonth:'bad',escalation:99});const before=structuredClone(d);
+ assert.equal(validateWizardStep(d,1).valid,true);assert.deepEqual(buildWizardPlan(d).incomes,[]);assert.deepEqual(d,before);
+ forecast(d,'you',{weeklyAmount:0});assert.deepEqual(buildWizardPlan(d).incomes,[]);assert.equal(buildWizardPlan(d).drawdown.mode,'pots');
+ d.you.statePension.enabled='true';assert.equal(validateWizardStep(d,1).valid,false);
+});
+test('enabled forecast requires explicit valid amount, claim month and editable escalation at money step',()=>{
+ const d=ready();d.you.statePension.enabled=true;assert.equal(validateWizardStep(d,0).valid,true);assert.equal(validateWizardStep(d,1).valid,false);assert.throws(()=>buildWizardPlan(d),/State Pension/);
+ for(const weeklyAmount of ['', '230', NaN,Infinity,-1,10000.01]) {forecast(d,'you',{weeklyAmount});assert.ok(validateWizardStep(d,1).errors.some(e=>e.field==='you.statePension.weeklyAmount'));}
+ for(const startMonth of ['', '2046-13','1979-10','1979-11','2251-01',null]) {forecast(d,'you',{startMonth});assert.ok(validateWizardStep(d,1).errors.some(e=>e.field==='you.statePension.startMonth'));}
+ for(const escalation of ['', '2.5', NaN,Infinity,-0.1,15.01]) {forecast(d,'you',{escalation});assert.ok(validateWizardStep(d,1).errors.some(e=>e.field==='you.statePension.escalation'));}
+ for(const value of [0,15]) {forecast(d,'you',{escalation:value,weeklyAmount:10000,startMonth:'1979-12'});assert.equal(validateWizardStep(d,1).valid,true);assert.equal(buildWizardPlan(d).incomes[0].escalation,value);}
+});
+test('partner forecast needs active partner and explicit opt in; toggles never duplicate or erase it',()=>{
+ const d=ready();d.partner.age=44;forecast(d,'partner');assert.deepEqual(buildWizardPlan(d).incomes,[]);assert.equal(buildWizardPlan(d).drawdown.mode,'pots');
+ d.includePartner=true;let p=buildWizardPlan(d);assert.equal(p.incomes.length,1);assert.equal(p.incomes[0].id,'state-partner');assert.equal(p.incomes[0].owner,'partner');assert.equal(p.drawdown.mode,'totalIncome');
+ forecast(d);p=buildWizardPlan(d);assert.deepEqual(p.incomes.map(i=>i.id),['state-you','state-partner']);
+ d.includePartner=false;assert.equal(buildWizardPlan(d).incomes.length,1);d.includePartner=true;assert.deepEqual(buildWizardPlan(d),p);
+ d.partner.statePension.startMonth='1980-01';assert.ok(validateWizardStep(d,1).errors.some(e=>e.field==='partner.statePension.startMonth'));d.includePartner=false;assert.equal(validateWizardStep(d,1).valid,true);
+});
+test('forecast can begin before plan start or after projection without guessing another claim date',()=>{
+ const d=ready();forecast(d,'you',{startMonth:'2025-01'});assert.equal(buildWizardPlan(d).incomes[0].startMonth,'2025-01');
+ forecast(d,'you',{startMonth:'2080-01'});const p=buildWizardPlan(d);assert.equal(p.incomes[0].startMonth,'2080-01');assert.equal(p.incomes[0].endMonth,'2250-12');assert.ok(project(p).months.every(m=>m.incomeGross===0));
 });

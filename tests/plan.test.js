@@ -15,7 +15,7 @@ test('save/load roundtrip includes both people, pots, events, settings and incom
 });
 test('validation never mutates existing plan', () => {const p = createExamplePlan(); const before = JSON.stringify(p); validatePlan(p); serializePlan(p); assert.equal(JSON.stringify(p), before);});
 test('unsupported versions and missing/unknown fields rejected', () => {
-  invalid(alter(p => p.version = 3), /Unsupported plan version/);
+  invalid(alter(p => p.version = 4), /Unsupported plan version/);
   invalid(alter(p => p.version = {toString: 1}), /Unsupported plan version/);
   invalid(alter(p => delete p.inflation), /inflation is required/);
   invalid(alter(p => p.extra = true), /extra is not supported/);
@@ -25,7 +25,7 @@ test('JSON malformed, unsafe prototype keys and large files rejected', () => {
   assert.throws(() => parsePlan('{'), /valid JSON/);
   assert.throws(() => parsePlan(' '.repeat(MAX_PLAN_BYTES + 1)), /1 MB/);
   const p = JSON.stringify(createExamplePlan());
-  assert.throws(() => parsePlan(p.replace('"version":2','"__proto__":{"polluted":true},"version":2')), /Unsafe property/);
+  assert.throws(() => parsePlan(p.replace('"version":3','"__proto__":{"polluted":true},"version":3')), /Unsafe property/);
   assert.equal({}.polluted, undefined);
   invalid(alter(p => p.pots[0].constructor = {}), /Unsafe property/);
   invalid(alter(p => p.pots[0].id = 'constructor'), /safe identifier/);
@@ -78,12 +78,12 @@ test('nonpension contributions cannot receive tax relief or employer additions',
   invalid(alter(p => p.pots[0].employerContribution = 1), /non-pension/);
   assert.equal(validatePlan(alter(p => p.pots[2].contributionBasis = 'netRelief')).valid,true);
 });
-test('bad load leaves caller data unchanged', () => {const existing = createExamplePlan(); const saved = serializePlan(existing); assert.throws(() => parsePlan('{"version":2}')); assert.equal(serializePlan(existing), saved);});
+test('bad load leaves caller data unchanged', () => {const existing = createExamplePlan(); const saved = serializePlan(existing); assert.throws(() => parsePlan('{"version":3}')); assert.equal(serializePlan(existing), saved);});
 
 const legacyExample = () => { const p=createExamplePlan(); p.version=1; delete p.drawdown; return p; };
 test('v1 load migrates without mutating original and preserves old no-automatic-drawdown meaning',()=>{
  const legacy=legacyExample(), original=structuredClone(legacy), text=JSON.stringify(legacy);
- const current=parsePlan(text);assert.deepEqual(project(current),project(legacy));assert.equal(current.version,2);assert.deepEqual(current.drawdown,{annualAmount:0,inflationLinked:true});
+ const current=parsePlan(text);assert.deepEqual(project(current),project({...legacy,version:3,drawdown:{mode:'pots',annualAmount:0,inflationLinked:true}}));assert.equal(current.version,3);assert.deepEqual(current.drawdown,{mode:'pots',annualAmount:0,inflationLinked:true});
  const restored=structuredClone(current);restored.version=1;delete restored.drawdown;assert.deepEqual(restored,original);assert.deepEqual(legacy,original);
  assert.equal(validatePlan(current).valid,true);assert.deepEqual(parsePlan(serializePlan(current)),current);assert.equal(validatePlan(legacy).valid,false);assert.throws(()=>serializePlan(legacy),/version/);
 });
@@ -93,10 +93,34 @@ test('legacy fields are strictly validated BEFORE migration',()=>{
  }
  const text=JSON.stringify(legacyExample());assert.throws(()=>parsePlan(text.replace('"version":1','"version":1,"__proto__":{"polluted":true}')),/Unsafe property/);assert.equal({}.polluted,undefined);
 });
-test('v2 drawdown is required, finite, bounded and strict',()=>{
+test('v3 drawdown is required, finite, bounded and strict',()=>{
  invalid(alter(p=>delete p.drawdown),/drawdown/);invalid(alter(p=>p.drawdown=null),/drawdown/);
  for(const value of [-1,12000001,Infinity,NaN,'100',null]) invalid(alter(p=>p.drawdown.annualAmount=value),/annualAmount/);
  for(const value of [0,12000000]) {const p=alter(p=>p.drawdown.annualAmount=value);assert.equal(validatePlan(p).valid,true);assert.deepEqual(parsePlan(serializePlan(p)),p);}
  invalid(alter(p=>p.drawdown.inflationLinked=1),/inflationLinked/);invalid(alter(p=>p.drawdown.extra=true),/not supported/);
  assert.throws(()=>parsePlan(JSON.stringify(createExamplePlan()).replace('"annualAmount":0','"annualAmount":1e999')),/annualAmount/);
+});
+
+test('v2 migration preserves amounts, indexation and explicit pot-only semantics',()=>{
+ for(const inflationLinked of [false,true]) {
+  const old=createExamplePlan();old.version=2;delete old.drawdown.mode;old.drawdown.annualAmount=36000;old.drawdown.inflationLinked=inflationLinked;
+  const before=structuredClone(old), migrated=parsePlan(JSON.stringify(old));
+  assert.equal(migrated.version,3);assert.deepEqual(migrated.drawdown,{mode:'pots',annualAmount:36000,inflationLinked});
+  assert.deepEqual(migrated,{...before,version:3,drawdown:{...before.drawdown,mode:'pots'}});assert.deepEqual(old,before);
+  assert.deepEqual(parsePlan(serializePlan(migrated)),migrated);
+ }
+});
+test('v2 migration rejects poisoned, missing, invalid and future fields before migration',()=>{
+ const legacy=()=>{const p=createExamplePlan();p.version=2;delete p.drawdown.mode;return p;};
+ for(const change of [p=>p.drawdown.mode='totalIncome',p=>delete p.drawdown,p=>delete p.drawdown.inflationLinked,p=>p.drawdown.annualAmount='500',p=>p.drawdown.extra=1,p=>p.extra=1,p=>p.incomes[0].extra=1]) {
+  const p=legacy();change(p);assert.throws(()=>parsePlan(JSON.stringify(p)));
+ }
+ for(const key of ['__proto__','constructor','prototype']) assert.throws(()=>parsePlan(JSON.stringify(legacy()).replace('"annualAmount":0',`"annualAmount":0,"${key}":{}`)),/Unsafe property/);
+});
+test('v3 requires explicit supported mode and does not coerce numeric data',()=>{
+ for(const mode of [undefined,null,'income','',true,1]) invalid(alter(p=>p.drawdown.mode=mode),/mode/);
+ invalid(alter(p=>delete p.drawdown.mode),/mode is required/);
+ for(const mode of ['pots','totalIncome']) {const p=alter(p=>p.drawdown.mode=mode);assert.deepEqual(parsePlan(serializePlan(p)),p);}
+ invalid(alter(p=>p.incomes[0].monthlyAmount='900'),/monthlyAmount/);
+ const p=createExamplePlan();delete p.drawdown.mode;assert.throws(()=>parsePlan(JSON.stringify(p)),/mode/);
 });

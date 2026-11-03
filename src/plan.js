@@ -1,5 +1,5 @@
 /** Versioned, local-only plan interchange. No persistence occurs in this module. */
-export const PLAN_VERSION = 2;
+export const PLAN_VERSION = 3;
 export const MAX_PLAN_BYTES = 1024 * 1024;
 const unsafeKeys = new Set(['__proto__', 'prototype', 'constructor']);
 const pensionTypes = new Set(['sipp', 'workplace']);
@@ -13,7 +13,7 @@ function validDate(value) {
 }
 /** Return validation errors without changing the input. Names are plain text, not markup. */
 export function validatePlan(plan) { return validateVersion(plan, PLAN_VERSION); }
-// Legacy shape is checked before migration: v1 cannot contain v2 or unknown fields.
+// Each legacy shape is strictly checked before any migration adds new fields.
 function validateVersion(plan, expectedVersion) {
   const errors = [];
   const fail = message => { if (errors.length < 100) errors.push(message); };
@@ -46,10 +46,11 @@ function validateVersion(plan, expectedVersion) {
   function month(value, path) { if (!validMonth(value)) fail(`${path} must be a valid YYYY-MM month (1900–2250).`); }
   function array(value, path, limit) { if (!Array.isArray(value) || value.length > limit) { fail(`${path} must be an array with at most ${limit} entries.`); return []; } return value; }
   function identifier(value, path) { if (typeof value !== 'string' || !/^[a-zA-Z][a-zA-Z0-9_-]{0,49}$/.test(value) || unsafeKeys.has(value)) fail(`${path} must be a safe identifier (1–50 letters, numbers, hyphens or underscores).`); }
-  if (!object(plan, ['version','name','startMonth','endAge','includePartner','inflation','scenarioSpread','monthlySpending','spendingStart','people','pots','incomes','events', ...(expectedVersion === 2 ? ['drawdown'] : [])], 'plan')) return {valid: false, errors};
+  if (!object(plan, ['version','name','startMonth','endAge','includePartner','inflation','scenarioSpread','monthlySpending','spendingStart','people','pots','incomes','events', ...(expectedVersion >= 2 ? ['drawdown'] : [])], 'plan')) return {valid: false, errors};
   if (plan.version !== expectedVersion) fail(`Unsupported plan version. This app supports version ${PLAN_VERSION} only.`);
   string(plan.name, 'name'); month(plan.startMonth, 'startMonth'); month(plan.spendingStart, 'spendingStart');
-  if (expectedVersion === 2 && object(plan.drawdown, ['annualAmount','inflationLinked'], 'drawdown')) {
+  if (expectedVersion >= 2 && object(plan.drawdown, ['annualAmount','inflationLinked', ...(expectedVersion >= 3 ? ['mode'] : [])], 'drawdown')) {
+    if (expectedVersion >= 3) oneOf(plan.drawdown.mode, ['pots','totalIncome'], 'drawdown.mode');
     number(plan.drawdown.annualAmount, 'drawdown.annualAmount', 0, 12000000);
     if (typeof plan.drawdown.inflationLinked !== 'boolean') fail('drawdown.inflationLinked must be true or false.');
   }
@@ -112,10 +113,10 @@ export function parsePlan(text) {
   if (new TextEncoder().encode(text).byteLength > MAX_PLAN_BYTES) throw new Error('Plan file exceeds the 1 MB limit.');
   let plan;
   try { plan = JSON.parse(text); } catch { throw new Error('This is not a valid JSON plan file.'); }
-  if (plan?.version === 1) {
-    const legacy = validateVersion(plan, 1);
+  if (plan?.version === 1 || plan?.version === 2) {
+    const legacy = validateVersion(plan, plan.version);
     if (!legacy.valid) throw new Error(legacy.errors.join('\n'));
-    plan = {...plan, version: PLAN_VERSION, drawdown: {annualAmount: 0, inflationLinked: true}};
+    plan = {...plan, version: PLAN_VERSION, drawdown: {mode: 'pots', ...(plan.version === 1 ? {annualAmount: 0, inflationLinked: true} : plan.drawdown)}};
   }
   const result = validatePlan(plan);
   if (!result.valid) throw new Error(result.errors.join('\n'));
@@ -130,7 +131,7 @@ export function serializePlan(plan) {
 }
 export function createExamplePlan() {
   return {
-    version: PLAN_VERSION, drawdown: {annualAmount: 0, inflationLinked: true}, name: 'Illustrative retirement plan', startMonth: '2026-11', endAge: 95, includePartner: false,
+    version: PLAN_VERSION, drawdown: {mode: 'pots', annualAmount: 0, inflationLinked: true}, name: 'Illustrative retirement plan', startMonth: '2026-11', endAge: 95, includePartner: false,
     inflation: 2.5, scenarioSpread: 2, monthlySpending: 2500, spendingStart: '2044-11',
     people: [
       {id:'you',name:'You (example)',dob:'1979-11-01',retirementMonth:'2044-11',region:'rUK',taxFreeUsed:0},

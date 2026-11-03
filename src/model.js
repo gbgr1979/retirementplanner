@@ -1,3 +1,5 @@
+import {validatePlan} from './plan.js';
+
 /** Deterministic illustration, not regulated advice. Tax rules frozen at 2026/27.
  * Sources checked 2 November 2026: gov.uk/income-tax-rates and
  * gov.uk/scottish-income-tax. All April flows assigned to the new tax year
@@ -40,13 +42,16 @@ export function pensionAccessible(pot, person, month) {
 }
 
 export function project(plan, {scenario='base'}={}) {
+  const validation = validatePlan(plan);
+  if(!validation.valid) throw new Error('Invalid plan: '+validation.errors.join(' '));
   if(!['base','lower','higher'].includes(scenario)) throw new Error('Unknown scenario');
   const people = plan.people.filter(p=>p.id==='you'||plan.includePartner);
   const personMap = new Map(people.map(p=>[p.id,p]));
   const primary = personMap.get('you');
   if(!primary) throw new Error('Primary person is required');
   const pots = plan.pots.filter(p=>personMap.has(p.owner));
-  const drawdown = plan.drawdown ?? {annualAmount:0,inflationLinked:false};
+  const drawdown = plan.drawdown;
+  const totalIncomeMode = drawdown.mode === 'totalIncome';
   const priority = {savings:0,cashIsa:1,stocksIsa:2,sipp:3,workplace:3};
   const drawdownPots = pots.map((pot,index)=>({pot,index})).sort((a,b)=>priority[a.pot.type]-priority[b.pot.type] || Number(a.pot.owner==='partner')-Number(b.pot.owner==='partner') || a.index-b.index).map(item=>item.pot);
   const potMap = new Map(pots.map(p=>[p.id,p]));
@@ -59,21 +64,25 @@ export function project(plan, {scenario='base'}={}) {
   const warn = (row, text) => {row.warnings.push(text);warnings.add(text);};
   const assumptions = [
     'Illustration, not advice: fixed returns do not model market volatility, sequence risk or guarantee outcomes.',
-    'Income-tax bands and the standard lump-sum allowance are frozen at 2026/27 for every projected year; future legislation is not forecast.',
+    'Income-tax bands and the standard lump-sum allowance are frozen at 2026/27 for every projected year; future tax changes, including changes from April 2027, are not modelled.',
     'Monthly timing: contributions at the start; growth then charges; events at the end in their listed order. Pension access starts the month after a mid-month birthday.',
     'April is assigned wholly to the new tax year, approximating the statutory 6 April boundary. Partial first/final tax years use a full annual allowance and omit income outside the plan.',
     'Tax is calculated per owner over each modelled tax year and allocated proportionally to taxable income and withdrawals; it is not a PAYE timing forecast.',
     'DC withdrawals assume uncrystallised funds: 25% tax-free, capped by each owner’s remaining standard £268,275 lump-sum allowance. Existing crystallised pots, protected allowances and other benefit events are unsupported.',
     'Only modelled non-savings income and taxable DC withdrawals enter income tax. Savings-interest tax, NI, capital gains, dividends, benefits, marriage allowance, contribution tax deductions and higher-rate relief are excluded.',
     'Spending and income begin as amounts in plan-start pounds, then rise at inflation / each income’s escalation. Event amounts are fixed future nominal gross withdrawals.',
-    'An optional annual gross withdrawal target starts in the primary person’s retirement month. It is split monthly; inflation-linked targets use plan-start purchasing power, otherwise they stay fixed nominal.',
+    'The annual before-tax target starts in the primary person’s retirement month and is split monthly. Inflation-linked targets use plan-start purchasing power, otherwise they stay fixed nominal.',
+    totalIncomeMode
+      ? 'Total-income mode: active gross State Pension, defined-benefit and other income reduce the household target before pot withdrawals. Income above the target is not reinvested and does not create future credit.'
+      : 'Pot-withdrawal mode: the target is gross pot withdrawals alone. State Pension, defined-benefit and other income remain additional and do not reduce this target.',
     'Successful scheduled gross withdrawals offset only that month’s target. Transfers and rejected events do not count; events exceeding the target still execute in full, with no credit against future months.',
     'After scheduled events, the remaining target draws from accessible active pots in this order: cash savings, cash ISA, stocks and shares ISA, then SIPP/workplace DC together. Within each group, your pots precede your partner’s, retaining listed order. Partial funding is reported, never a negative balance.',
-    'The target is gross, not a promised net income or a tax-optimised strategy. Income streams remain independent; spending compares cash received and does not cause another withdrawal. Withdrawn surplus is not reinvested or carried forward.',
+    'The target is before tax, not a promised net income or a tax-optimised strategy. Tax is calculated after gross flows. Spending compares cash received and does not cause another withdrawal. Surplus is not reinvested or carried forward.',
     'Contributions are funded externally, not subtracted from household spending. They stop at the owner’s retirement month or the specified end month, whichever is earlier.',
     'Transfers only move accessible non-pension pots belonging to the same owner; they do not represent formal ISA transfers, enforce subscription rules or model pensions transfers.',
     'No State Pension entitlement is inferred: enter your forecast and start month. No deaths, survivor benefits, IHT or care costs are inferred.'
   ];
+  warnings.add('Tax illustration uses frozen 2026/27 rules for all years. Future tax changes, including changes from April 2027, are not modelled; before-tax targets are not guaranteed take-home income.');
   if(pots.some(p=>p.type==='savings' && p.growth+adjustment>0)) warnings.add('Taxable savings-interest tax is not modelled. Savings balances and available cash can be overstated; after-tax figures cover modelled non-savings income and pension withdrawals only.');
   if(plan.startMonth.slice(5)!=='04') warnings.add('The first tax year is partial. Add all relevant income or interpret the tax estimate cautiously: income before the projection is not included.');
   for (const event of plan.events) {
@@ -83,7 +92,7 @@ export function project(plan, {scenario='base'}={}) {
   const mpaaOwners = new Set();
   for(let index=begin; index<end; index++) {
     const month=monthText(index), opening=sum(Object.values(balances));
-    const row={month,opening,balances:dictionary(),accessible:0,locked:0,total:0,incomeGross:0,incomeNet:0,withdrawalsGross:0,withdrawalsNet:0,withdrawalTarget:0,scheduledWithdrawalsGross:0,recurringWithdrawalsGross:0,unmetWithdrawal:0,tax:0,spending:0,shortfall:0,contributions:0,growth:0,fees:0,warnings:[],potLedger:dictionary(),taxComplete:false};
+    const row={month,opening,balances:dictionary(),accessible:0,locked:0,total:0,incomeGross:0,incomeNet:0,withdrawalsGross:0,withdrawalsNet:0,withdrawalTarget:0,incomeTarget:0,incomeOffset:0,scheduledWithdrawalsGross:0,recurringWithdrawalsGross:0,unmetWithdrawal:0,tax:0,spending:0,shortfall:0,contributions:0,growth:0,fees:0,warnings:[],potLedger:dictionary(),taxComplete:false};
     const ownerFlows=dictionary(people.map(p=>[p.id,{income:0,taxableWithdrawal:0,withdrawal:0}]));
     for(const pot of pots) {
       const person=personMap.get(pot.owner);
@@ -140,8 +149,13 @@ export function project(plan, {scenario='base'}={}) {
         if(target.type.endsWith('Isa')) warnings.add(`${prefix}: ISA transfer/subscription treatment is not checked. Confirm the permitted transfer process and annual subscription allowance.`);
       } else removeForSpending(pot,event.amount);
     }
-    row.withdrawalTarget=month>=primary.retirementMonth
+    const grossTarget=month>=primary.retirementMonth
       ? drawdown.annualAmount/12*(drawdown.inflationLinked?Math.pow(1+plan.inflation/100,(index-begin)/12):1):0;
+    if(totalIncomeMode) {
+      row.incomeTarget=grossTarget;
+      row.incomeOffset=Math.min(grossTarget,row.incomeGross);
+    }
+    row.withdrawalTarget=Math.max(0,grossTarget-row.incomeOffset);
     let remaining=Math.max(0,row.withdrawalTarget-row.scheduledWithdrawalsGross);
     for(const pot of drawdownPots) {
       if(remaining<=0) break;
@@ -184,9 +198,9 @@ export function project(plan, {scenario='base'}={}) {
     row.shortfall=Math.max(0,row.spending-row.incomeNet-row.withdrawalsNet);
     row.surplus=Math.max(0,row.incomeNet+row.withdrawalsNet-row.spending);
     const year=Number(row.month.slice(0,4));
-    if(!yearMap.has(year)) yearMap.set(year,{year,opening:row.opening,contributions:0,growth:0,fees:0,withdrawals:0,closing:0,incomeGross:0,incomeNet:0,withdrawalsNet:0,withdrawalTarget:0,scheduledWithdrawalsGross:0,recurringWithdrawalsGross:0,unmetWithdrawal:0,spending:0,shortfall:0,tax:0,accessible:0,locked:0,balances:dictionary(),potLedger:dictionary()});
+    if(!yearMap.has(year)) yearMap.set(year,{year,opening:row.opening,contributions:0,growth:0,fees:0,withdrawals:0,closing:0,incomeGross:0,incomeNet:0,withdrawalsNet:0,withdrawalTarget:0,incomeTarget:0,incomeOffset:0,scheduledWithdrawalsGross:0,recurringWithdrawalsGross:0,unmetWithdrawal:0,spending:0,shortfall:0,tax:0,accessible:0,locked:0,balances:dictionary(),potLedger:dictionary()});
     const annual=yearMap.get(year);
-    for(const key of ['contributions','growth','fees','incomeGross','incomeNet','withdrawalsNet','withdrawalTarget','scheduledWithdrawalsGross','recurringWithdrawalsGross','unmetWithdrawal','spending','shortfall','tax']) annual[key]+=row[key];
+    for(const key of ['contributions','growth','fees','incomeGross','incomeNet','withdrawalsNet','withdrawalTarget','incomeTarget','incomeOffset','scheduledWithdrawalsGross','recurringWithdrawalsGross','unmetWithdrawal','spending','shortfall','tax']) annual[key]+=row[key];
     annual.withdrawals+=row.withdrawalsGross;annual.closing=row.total;annual.accessible=row.accessible;annual.locked=row.locked;annual.balances=dictionary(Object.entries(row.balances));
     for(const [id,l] of Object.entries(row.potLedger)) {
       if(!Object.hasOwn(annual.potLedger,id)) annual.potLedger[id]={opening:l.opening,contributions:0,growth:0,fees:0,withdrawals:0,transfersIn:0,transfersOut:0,closing:0};

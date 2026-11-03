@@ -35,12 +35,12 @@ export function adjustAnnualWithdrawal(amount,direction) {
 }
 
 export function withdrawalOutcome(plan,result) {
- if(!plan.drawdown?.annualAmount)return {hasGap:false,text:'Choose an annual amount to test regular withdrawals. Scheduled events still apply.'};
- const active=result.months.filter(m=>m.withdrawalTarget>0);
+ if(!plan.drawdown?.annualAmount)return {hasGap:false,text:'Choose an annual amount to test. Scheduled events still apply.'};
+ const active=result.months.filter(m=>plan.drawdown.mode==='totalIncome'?m.incomeTarget>0:m.withdrawalTarget>0);
  if(!active.length)return {hasGap:false,text:'Your retirement starts outside this projection. Extend the planning horizon to test withdrawals.'};
  const gap=result.firstUnmetWithdrawal;
  const date=month=>new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-GB',{month:'long',year:'numeric',timeZone:'UTC'});
- if(gap)return {hasGap:true,text:`First withdrawal shortfall: ${date(gap.month)}. ${gap.locked>0.01?'Some pension funds are still locked — this is not the same as all your money running out.':gap.total<=0.01?'Your modelled pots are depleted at that point.':'The accessible pots cannot meet that month’s target.'} Try a lower amount to compare.`};
+ if(gap)return {hasGap:true,text:`First ${plan.drawdown.mode==='totalIncome'?'income-target':'withdrawal'} shortfall: ${date(gap.month)}. ${gap.locked>0.01?'Some pension funds are still locked — this is not the same as all your money running out.':gap.total<=0.01?'Your modelled pots are depleted at that point.':'The accessible pots cannot meet that month’s target.'} Try a lower amount to compare.`};
  return {hasGap:false,text:`This target is funded through ${date(active.at(-1).month)} in this scenario. That is the end of the projection, not a guarantee of sustainable income.`};
 }
 
@@ -164,7 +164,7 @@ export function withdrawalCardSummary(plan,result) {
  if(!plan.drawdown.annualAmount)return 'Set an annual amount to compare withdrawals.';
  const gap=result.firstUnmetWithdrawal;
  if(gap)return `Shortfall from ${readableMonth(gap.month)}. ${gap.locked>0.01?'Some pension funds remain locked.':gap.total<=0.01?'Modelled pots depleted.':'Accessible pots cannot cover the target.'}`;
- const last=result.months.filter(m=>m.withdrawalTarget>0).at(-1);
+ const last=result.months.filter(m=>plan.drawdown.mode==='totalIncome'?m.incomeTarget>0:m.withdrawalTarget>0).at(-1);
  return last?`Funded through ${readableMonth(last.month)} in this scenario. Not guaranteed.`:'Retirement is outside this projection.';
 }
 
