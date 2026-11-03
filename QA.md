@@ -97,3 +97,9 @@ Schema v3 adds an explicit pots-only versus total-gross-income target mode. Stri
 178 tests, syntax/build and exact twelve-asset publishing checks pass. New plans include the 2026/27 full-new-rate illustration (£241.30/week) with 2.5% nominal growth, editable/off per person. Official timetable transitions and month-end clamps are tested; approximate age-based birth dates and first-full-month timing are disclosed. Older cohorts without enough eligibility detail require personal values. Explicit custom dates survive repeated age/default collisions and partner toggles. Existing plans remain unchanged.
 
 Independent model review passed official date boundaries, weekly conversion, escalation applied once, claim bridge, partner exclusion and legacy preservation. Desktop browser QA passed defaults for ages47/49, custom amount/date, off/zero, Back/Next, older-cohort explanation, left-menu editing, focus return and rapid Cancel/reopen. Mobile rendering and browser saved-file loading remain untested. PowerShell runtime unavailable; publisher parity/security tests pass.
+
+## Quick growth controls
+
+184 tests, syntax/build and twelve-asset payload checks pass. Pure helpers preserve mixed rates, decimal precision, excluded partners, fees, incomes and scenario spread; reject whole-group out-of-bounds steps; and retain exact plan-file roundtrips. Independent model checks verified a known one-year balance under base/lower/higher growth after fees.
+
+Actual desktop browser checks passed the matching three-control row, ±0.5 steps, live chart and editor updates, pending edits/keyboard focus, mixed-range shifts, excluded/included partner, upper/lower bounds and scenario separation. Mobile rendering and browser file loading remain untested; save/load roundtrips are covered programmatically. No deployment was performed.

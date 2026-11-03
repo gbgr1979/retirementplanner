@@ -1,7 +1,7 @@
 import {mountStatePension} from './state-pension.js';
 import {formatMoneyValue,parseMoneyInput,attachMoneyInputs} from './money-input.js';
 import {mountWizard} from './wizard-ui.js';
-import {escapeHTML,discountFactor,retirementSnapshot,updatePlanScreen,adjustAnnualWithdrawal,withdrawalOutcome,retirementDateLinks,retirementYearControls,shiftRetirementYear,retirementMarker,reconcileRetirementLinks,projectionTimeline,svgChart,mountHelpDialog,withdrawalCardSummary,planSummary} from './view.js';
+import {escapeHTML,discountFactor,retirementSnapshot,updatePlanScreen,adjustAnnualWithdrawal,withdrawalOutcome,retirementDateLinks,retirementYearControls,shiftRetirementYear,retirementMarker,reconcileRetirementLinks,projectionTimeline,svgChart,mountHelpDialog,withdrawalCardSummary,planSummary,growthRateControls,shiftGroupGrowth} from './view.js';
 import {createExamplePlan,validatePlan,parsePlan,serializePlan} from './plan.js';
 import {project} from './model.js';
 const $=id=>document.getElementById(id);
@@ -35,7 +35,7 @@ function apply(){try{acceptEdits(readEditor());dirty=true;status();notify('');re
 function factor(year){return discountFactor(plan,result?.months||[],year,real);}
 
 function renderResults(){try{result=project(plan,{scenario});}catch(e){notify('Projection could not be calculated: '+e.message,true);return;}
-const years=result.years;if(!years.length)return;$('projection-timeline').textContent=projectionTimeline(plan,result);renderWithdrawalControl();renderRetirementControl();const retirement=retirementSnapshot(plan,years).year;
+const years=result.years;if(!years.length)return;$('projection-timeline').textContent=projectionTimeline(plan,result);renderWithdrawalControl();renderRetirementControl();renderGrowthControls();const retirement=retirementSnapshot(plan,years).year;
 $('scenario-note').textContent=scenario==='base'?'Your entered growth rates':`${scenario==='lower'?'−':'+'}${plan.scenarioSpread} percentage points on growth`;
 const summary=planSummary(plan,result,real),prefix=plan.includePartner?'Household pot':'Pot';
 $('metrics').innerHTML=`<div><span>${prefix} at retirement</span><strong ${summary.retirement.value===null?'class="metric-unavailable"':''}>${summary.retirement.value===null?'Outside this plan':money(summary.retirement.value)}</strong><small>${esc(summary.retirement.dateLabel)}</small></div><div><span>${prefix} left at plan end</span><strong ${summary.end.value===null?'class="metric-unavailable"':''}>${summary.end.value===null?'Not available':money(summary.end.value)}</strong><small>${esc(summary.end.dateLabel)}</small></div>`;
@@ -74,6 +74,27 @@ function changeWithdrawal(direction=0){
  if(!Number.isFinite(value)||value<0||value>12000000){error.hidden=false;error.textContent='Enter an annual amount from £0 to £12,000,000.';input.setAttribute('aria-invalid','true');return;}
  try{const candidate=readEditor();candidate.drawdown.annualAmount=direction?adjustAnnualWithdrawal(value,direction):value;acceptEdits(candidate);dirty=true;status();error.hidden=true;input.removeAttribute('aria-invalid');notify('');renderResults();if(editing){input.value=editing.value;input.setSelectionRange(editing.start,editing.end);}$('edit-status').textContent='Projection updated, including the annual withdrawal target.';}
  catch(err){error.hidden=false;error.textContent=err.message;}
+}
+
+function renderGrowthControls(){
+ for(const group of growthRateControls(plan)){
+  const prefix='growth-'+group.category, output=$(prefix+'-value');
+  output.textContent=group.mixed?'Mixed':group.display;
+  output.title=group.display;output.setAttribute('aria-label',group.label+' base growth: '+group.display);
+  output.classList.toggle('growth-mixed',group.mixed);
+  $(prefix+'-hint').textContent=group.count?(group.mixed?`${group.min}% to ${group.max}% · `:'')+`${group.count} included ${group.count===1?'pot':'pots'}`:'No included pots';
+  $(prefix+'-minus').disabled=!group.canDecrease;$(prefix+'-plus').disabled=!group.canIncrease;
+ }
+}
+function changeGrowth(category,direction){
+ try{const candidate=validate(readEditor()),shifted=shiftGroupGrowth(candidate,category,direction);
+ if(shifted===candidate){notify('That growth change would exceed the allowed range, or there are no included pots in that category.',true);return;}
+ acceptEdits(shifted);dirty=true;status();notify('');renderEditor();renderResults();$('edit-status').textContent='Projection updated with your base growth rates.';
+ }catch(error){notify(error.message,true);}
+}
+for(const category of ['savings','isa','pension']){
+ $('growth-'+category+'-minus').addEventListener('click',()=>changeGrowth(category,-1));
+ $('growth-'+category+'-plus').addEventListener('click',()=>changeGrowth(category,1));
 }
 
 function renderRetirementControl(){

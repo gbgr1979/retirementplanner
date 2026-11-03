@@ -203,3 +203,46 @@ export function ageAtMonthStart(dob,month) {
  if(!Number.isFinite(birth.getTime())||!Number.isFinite(date.getTime())||birth.toISOString().slice(0,10)!==dob||date.toISOString().slice(0,7)!==month||date<birth)return null;
  return date.getUTCFullYear()-birth.getUTCFullYear()-(date.getUTCMonth()<birth.getUTCMonth()||(date.getUTCMonth()===birth.getUTCMonth()&&birth.getUTCDate()>1)?1:0);
 }
+
+export const GROWTH_RATE_STEP = 0.5;
+const growthGroups = [
+ {category:'savings',label:'Savings',types:['savings']},
+ {category:'isa',label:'ISA',types:['cashIsa','stocksIsa']},
+ {category:'pension',label:'Pension',types:['sipp','workplace']}
+];
+const activeGrowthPots = (plan,group) => (plan?.pots||[]).filter(pot=>
+ (pot.owner==='you'||(plan.includePartner===true&&pot.owner==='partner'))&&group.types.includes(pot.type));
+/** Add half a percentage point in decimal space, retaining imported rate precision. */
+function steppedGrowth(rate,direction) {
+ const [mantissa,exponent='0']=String(rate).split('e');
+ const [whole,fraction='']=mantissa.split('.');
+ const decimals=fraction.length-Number(exponent),scale=Math.max(1,decimals);
+ const units=BigInt(whole+fraction)*10n**BigInt(scale-decimals);
+ const shifted=units+BigInt(direction)*5n*10n**BigInt(scale-1);
+ const negative=shifted<0n,digits=(negative?-shifted:shifted).toString().padStart(scale+1,'0');
+ return Number(`${negative?'-':''}${digits.slice(0,-scale)}.${digits.slice(-scale)}`);
+}
+const validGrowth = rate => Number.isFinite(rate)&&rate>=-50&&rate<=50;
+const canShiftGrowth = (pots,direction) => pots.length>0&&pots.every(pot=>
+ validGrowth(pot.growth)&&validGrowth(steppedGrowth(pot.growth,direction)));
+/** Group base rates before fees; never blend unlike pots into a misleading average. */
+export function growthRateControls(plan) {
+ return growthGroups.map(group=>{
+  const pots=activeGrowthPots(plan,group),valid=pots.every(pot=>validGrowth(pot.growth));
+  const rates=valid?pots.map(pot=>pot.growth):[];
+  const min=rates.length?Math.min(...rates):null,max=rates.length?Math.max(...rates):null;
+  const mixed=rates.length>0&&min!==max,rate=rates.length&&!mixed?min:null;
+  return {category:group.category,label:group.label,count:pots.length,rate,min,max,mixed,
+   display:!pots.length?'No pots':!valid?'Invalid rate':mixed?`Mixed: ${min}%–${max}%`:`${rate}%`,
+   canDecrease:canShiftGrowth(pots,-1),canIncrease:canShiftGrowth(pots,1),step:GROWTH_RATE_STEP};
+ });
+}
+/** Shift every active pot in one group equally, preserving other plan assumptions. */
+export function shiftGroupGrowth(plan,category,direction) {
+ const group=growthGroups.find(group=>group.category===category);
+ if(!group||(direction!==-1&&direction!==1))return plan;
+ const pots=activeGrowthPots(plan,group);
+ if(!canShiftGrowth(pots,direction))return plan;
+ const affected=new Set(pots);
+ return {...plan,pots:plan.pots.map(pot=>affected.has(pot)?{...pot,growth:steppedGrowth(pot.growth,direction)}:pot)};
+}

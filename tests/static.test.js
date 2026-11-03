@@ -31,7 +31,7 @@ test('retirement controls sit inside annual withdrawals, not the wealth chart',a
  assert.match(withdrawal,/id="retirement-minus"/);assert.match(withdrawal,/id="retirement-plus"/);assert.equal((html.match(/id="retirement-date"/g)||[]).length,1);assert.match(html,/id="projection-timeline"/);
 });
 
-test('unified controls keep short critical hints and move detailed rules into labelled help modal',async()=>{const html=await readFile('index.html','utf8'),card=html.slice(html.indexOf('<article class="withdrawal-card"'),html.indexOf('</article>',html.indexOf('<article class="withdrawal-card"')));assert.match(card,/class="plan-controls"/);assert.equal((card.match(/class="plan-control"/g)||[]).length,2);assert.match(card,/Before tax/);assert.doesNotMatch(card,/contribution end dates|tax-optimised|retirement-bounds/);assert.match(html,/<dialog id="plan-help-dialog"[^>]*aria-labelledby="plan-help-title"/);for(const id of ['withdrawal-basis','withdrawal-inflation','retirement-bounds','withdrawal-detail-status','plan-help-close'])assert.match(html.slice(html.indexOf('<dialog id="plan-help-dialog"')),new RegExp(`id="${id}"`));});
+test('unified controls keep short critical hints and move detailed rules into labelled help modal',async()=>{const html=await readFile('index.html','utf8'),card=html.slice(html.indexOf('<article class="withdrawal-card"'),html.indexOf('</article>',html.indexOf('<article class="withdrawal-card"')));assert.match(card,/class="plan-controls"/);assert.equal((card.match(/class="plan-control"/g)||[]).length,5);assert.match(card,/Before tax/);assert.doesNotMatch(card,/contribution end dates|tax-optimised|retirement-bounds/);assert.match(html,/<dialog id="plan-help-dialog"[^>]*aria-labelledby="plan-help-title"/);for(const id of ['withdrawal-basis','withdrawal-inflation','retirement-bounds','withdrawal-detail-status','plan-help-close'])assert.match(html.slice(html.indexOf('<dialog id="plan-help-dialog"')),new RegExp(`id="${id}"`));});
 
 test('summary presents only retirement and remaining plan-end pots while shortfall remains visible',async()=>{const app=await readFile('src/app.js','utf8'),html=await readFile('index.html','utf8');const metrics=app.slice(app.indexOf("$('metrics').innerHTML="),app.indexOf("$('summary-retirement-help')"));assert.equal((metrics.match(/<div>/g)||[]).length,2);assert.match(metrics,/left at plan end/);assert.doesNotMatch(metrics,/Accessible that year|First unmet withdrawal/);assert.match(html,/id="withdrawal-status"/);assert.match(html,/not a prediction of death/);});
 
@@ -41,4 +41,10 @@ test('new pension defaults are visible and left menu shares the existing editor'
  const wizard=await readFile('src/wizard-ui.js','utf8'),app=await readFile('src/app.js','utf8');
  assert.match(wizard,/£241.30/);assert.match(wizard,/not your entitlement/);assert.match(wizard,/How these defaults work/);assert.match(wizard,/syncWizardStatePensionDefaults\(draft\)/);assert.match(wizard,/pensionDefaultOverrides/);
  assert.match(app,/edit-state-pension-menu/);const {staticFiles}=await import('../scripts/static-files.mjs');assert.ok(staticFiles.includes('src/state-pension-defaults.js'));
+});
+
+test('growth row has three matched steppers and explicit base-rate semantics',async()=>{
+ const html=await readFile('index.html','utf8'),app=await readFile('src/app.js','utf8');
+ for(const category of ['savings','isa','pension'])for(const suffix of ['minus','plus','value','hint'])assert.ok(html.includes(`id="growth-${category}-${suffix}"`));
+ assert.match(html,/mixed rates move together/);assert.match(html,/Base annual rates before fees/);assert.match(html,/cash and stocks &amp; shares ISAs/);assert.match(app,/shiftGroupGrowth\(candidate,category,direction\)/);assert.match(app,/renderGrowthControls\(\)/);
 });

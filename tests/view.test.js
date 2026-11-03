@@ -229,3 +229,57 @@ test('income-funded target is not misreported as retirement outside the projecti
  const r={months:[{month:'2040-01',withdrawalTarget:0,incomeTarget:1000}],firstUnmetWithdrawal:null};
  assert.match(withdrawalOutcome(p,r).text,/funded through/);assert.match(withdrawalCardSummary(p,r),/Funded through/);
 });
+
+import {growthRateControls,shiftGroupGrowth,GROWTH_RATE_STEP} from '../src/view.js';
+test('growth controls group every supported pot type and show honest mixed ranges',()=>{
+ const p=createExamplePlan();p.includePartner=true;
+ p.pots.push({...p.pots[2],id:'sipp',type:'sipp',growth:4.125});
+ const [savings,isa,pension]=growthRateControls(p);
+ assert.equal(GROWTH_RATE_STEP,.5);assert.equal(savings.count,1);assert.equal(savings.rate,2.5);assert.equal(savings.display,'2.5%');
+ assert.equal(isa.count,2);assert.equal(isa.rate,null);assert.equal(isa.mixed,true);assert.equal(isa.display,'Mixed: 3%–5%');
+ assert.equal(pension.count,2);assert.equal(pension.min,4.125);assert.equal(pension.max,5);
+ for(const control of [savings,isa,pension])assert.ok(control.canDecrease&&control.canIncrease);
+ for(const category of ['savings','isa','pension']){
+  const changed=shiftGroupGrowth(p,category,1),types=category==='savings'?['savings']:category==='isa'?['cashIsa','stocksIsa']:['sipp','workplace'];
+  changed.pots.forEach((pot,i)=>assert.equal(pot.growth,p.pots[i].growth+(types.includes(pot.type)?.5:0)));
+ }
+});
+test('growth shifts preserve heterogeneous precise rates, all unrelated fields and hidden partner pots',()=>{
+ const p=createExamplePlan();p.pots[0].growth=3.123456789;p.pots.push({...p.pots[0],id:'anotherIsa',growth:1.234567891});
+ const before=structuredClone(p),shifted=shiftGroupGrowth(p,'isa',1);
+ assert.deepEqual(p,before);assert.notEqual(shifted,p);assert.equal(shifted.pots[0].growth,3.623456789);assert.equal(shifted.pots.at(-1).growth,1.734567891);
+ assert.equal(shifted.pots[3],p.pots[3]);assert.equal(growthRateControls(p)[1].count,2);
+ assert.deepEqual(shiftRetirementYear(p,1).incomes,shifted.incomes);
+ assert.deepEqual({...shifted,pots:p.pots},p);
+ for(let i=0;i<p.pots.length;i++)assert.deepEqual({...shifted.pots[i],growth:p.pots[i].growth},p.pots[i]);
+ assert.deepEqual(shiftGroupGrowth(shifted,'isa',-1),p);
+ p.includePartner=true;assert.equal(shiftGroupGrowth(p,'isa',1).pots[3].growth,3.5);
+});
+test('growth steps reject invalid inputs and stop the entire group at base-rate bounds',()=>{
+ const p=createExamplePlan();p.includePartner=true;p.pots[0].growth=49.75;
+ assert.equal(growthRateControls(p)[1].canIncrease,false);assert.equal(shiftGroupGrowth(p,'isa',1),p);
+ p.pots[0].growth=49.5;let q=shiftGroupGrowth(p,'isa',1);assert.equal(q.pots[0].growth,50);assert.equal(shiftGroupGrowth(q,'isa',1),q);
+ p.pots[0].growth=-49.5;q=shiftGroupGrowth(p,'isa',-1);assert.equal(q.pots[0].growth,-50);assert.equal(shiftGroupGrowth(q,'isa',-1),q);
+ p.pots[0].growth=-49.75;assert.equal(shiftGroupGrowth(p,'isa',-1),p);
+ for(const growth of [NaN,Infinity,-Infinity,'5',51,-51]){p.pots[0].growth=growth;assert.equal(shiftGroupGrowth(p,'isa',1),p);assert.equal(growthRateControls(p)[1].canDecrease,false);}
+ for(const direction of [0,2,'1',NaN])assert.equal(shiftGroupGrowth(p,'savings',direction),p);
+ for(const category of ['unknown','__proto__',null])assert.equal(shiftGroupGrowth(p,category,1),p);
+ p.pots=[];assert.equal(shiftGroupGrowth(p,'savings',1),p);for(const row of growthRateControls(p)){assert.equal(row.display,'No pots');assert.equal(row.count,0);assert.equal(row.canIncrease,false);assert.equal(row.rate,null);}
+});
+test('decimal growth steps restore precise custom rates after repeated comparisons',()=>{
+ for(const growth of [0.1,-0.1,3.123456789,0.000001,-0.000001,49.5,-49.5]){
+  const p=createExamplePlan();p.pots[1].growth=growth;let q=p;
+  const direction=growth>0?-1:1;
+  for(let i=0;i<20;i++)q=shiftGroupGrowth(q,'savings',direction);
+  for(let i=0;i<20;i++)q=shiftGroupGrowth(q,'savings',-direction);
+  assert.deepEqual(q,p);assert.ok(Number.isFinite(q.pots[1].growth));
+ }
+});
+test('growth comparison changes model totals and chart, survives saving, and restores projection',()=>{
+ const p=createExamplePlan(),baseline=project(p),shifted=shiftGroupGrowth(p,'pension',1),result=project(shifted);
+ assert.ok(result.years.at(-1).closing>baseline.years.at(-1).closing);
+ const chart=r=>svgChart(r.years,[{colour:'#21624d',values:r.years.map(y=>y.closing)}],true);
+ assert.notEqual(chart(result),chart(baseline));
+ const loaded=parsePlan(serializePlan(shifted));assert.deepEqual(loaded,shifted);assert.deepEqual(project(loaded),result);
+ assert.deepEqual(project(shiftGroupGrowth(shifted,'pension',-1)),baseline);
+});
