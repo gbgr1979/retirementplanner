@@ -119,3 +119,49 @@ export function projectionTimeline(plan,result) {
 
 /** Pure annual chart rendering: always uses every provided projection year. */
 export function svgChart(years,series,stacked=false,marker=null){const w=760,h=260,left=66,right=16,top=20,bottom=34,plotH=h-top-bottom;const max=Math.max(1,...years.map((y,i)=>stacked?series.reduce((s,a)=>s+(a.values[i]||0),0):Math.max(...series.map(a=>a.values[i]||0))));const x=i=>left+i*(w-left-right)/Math.max(1,years.length-1);const y=v=>h-bottom-v/max*plotH;let svg=`<svg viewBox="0 0 ${w} ${h}" data-start-year="${years[0].year}" data-end-year="${years.at(-1).year}" role="img" aria-label="${stacked?'Projected year-end balances by pot':'Annual estimated cash and spending'}"><title>${stacked?'Wealth projection':'Income and spending'} from ${years[0].year} to ${years.at(-1).year}; full values in the annual ledger below</title>`;for(let i=0;i<4;i++){let value=max*i/3;svg+=`<line x1="${left}" y1="${y(value)}" x2="${w-right}" y2="${y(value)}" class="gridline"/><text x="${left-8}" y="${y(value)+4}" text-anchor="end">£${Math.round(value/1000)}k</text>`;}let base=years.map(()=>0);series.forEach(s=>{if(stacked){const tops=s.values.map((v,i)=>base[i]+v);svg+=`<path fill="${s.colour}" d="M ${tops.map((v,i)=>`${x(i)},${y(v)}`).join(' L ')} L ${base.map((v,i)=>`${x(i)},${y(v)}`).reverse().join(' L ')} Z"/>`;base=tops;}else svg+=`<polyline fill="none" stroke="${s.colour}" stroke-width="3" ${s.dash?'stroke-dasharray="7 5"':''} points="${s.values.map((v,i)=>`${x(i)},${y(v)}`).join(' ')}"/>`;});years.forEach((a,i)=>{if(i===0||i===years.length-1||i%10===0)svg+=`<text x="${x(i)}" y="${h-8}" text-anchor="middle">${a.year}</text>`;});if(marker?.visible){const mx=x(marker.index),anchor=mx>(w-left-right)/2+left?'end':'start',tx=mx+(anchor==='end'?-7:7);svg+=`<g role="img" aria-label="${escapeHTML(marker.label)}"><line class="retirement-marker" x1="${mx}" x2="${mx}" y1="${top}" y2="${h-bottom}"/><text class="retirement-marker-label" x="${tx}" y="${top+12}" text-anchor="${anchor}">Retirement ${escapeHTML(years[marker.index].year)}</text></g>`;}return svg+'</svg>';}
+
+/** Native modal focus containment; help never reads or changes financial state. */
+export function mountHelpDialog(root,{triggerId='plan-help',dialogId='plan-help-dialog',closeId='plan-help-close'}={}) {
+ const trigger=root.getElementById(triggerId),dialog=root.getElementById(dialogId),close=root.getElementById(closeId);
+ if(!trigger||!dialog||!close)throw new Error('Help dialog controls are missing.');
+ let opener=null;
+ const open=event=>{
+  event.preventDefault();
+  if(dialog.open)return;
+  opener=event.currentTarget||trigger;
+  dialog.showModal();
+  close.focus();
+ };
+ const dismiss=event=>{
+  event.preventDefault();
+  if(dialog.open)dialog.close();
+ };
+ const keydown=event=>{if(event.key==='Escape')dismiss(event);};
+ const restore=()=>{
+  // Native close events are queued: an old event must not steal a reopened modal's focus.
+  if(dialog.open)return;
+  const target=opener;opener=null;
+  if(target?.isConnected!==false)target?.focus();
+ };
+ trigger.addEventListener('click',open);
+ close.addEventListener('click',dismiss);
+ dialog.addEventListener('cancel',dismiss);
+ dialog.addEventListener('keydown',keydown);
+ dialog.addEventListener('close',restore);
+ return ()=>{
+  trigger.removeEventListener('click',open);
+  close.removeEventListener('click',dismiss);
+  dialog.removeEventListener('cancel',dismiss);
+  dialog.removeEventListener('keydown',keydown);
+  dialog.removeEventListener('close',restore);
+ };
+}
+
+/** Compact card status; complete caveats remain available in the help dialog. */
+export function withdrawalCardSummary(plan,result) {
+ if(!plan.drawdown.annualAmount)return 'Set an annual amount to compare withdrawals.';
+ const gap=result.firstUnmetWithdrawal;
+ if(gap)return `Shortfall from ${readableMonth(gap.month)}. ${gap.locked>0.01?'Some pension funds remain locked.':gap.total<=0.01?'Modelled pots depleted.':'Accessible pots cannot cover the target.'}`;
+ const last=result.months.filter(m=>m.withdrawalTarget>0).at(-1);
+ return last?`Funded through ${readableMonth(last.month)} in this scenario. Not guaranteed.`:'Retirement is outside this projection.';
+}

@@ -127,3 +127,56 @@ test('retirement at the projection start is explained without dropping or invent
  assert.equal(marker.index,0);assert.match(projectionTimeline(p,r),/Retirement is set to the projection start/);
  assert.match(svgChart(r.years,[],true,marker),new RegExp(`data-start-year="${p.startMonth.slice(0,4)}"`));
 });
+
+import {mountHelpDialog} from '../src/view.js';
+function helpFixture(ids=['plan-help','plan-help-dialog','plan-help-close']) {
+ const root={activeElement:null,elements:{},getElementById(id){return this.elements[id];}};
+ for(const id of ids){
+  const listeners=new Map();
+  root.elements[id]={isConnected:true,open:false,showCount:0,
+   addEventListener(type,listener){if(!listeners.has(type))listeners.set(type,new Set());listeners.get(type).add(listener);},
+   removeEventListener(type,listener){listeners.get(type)?.delete(listener);},
+   dispatch(type,extra={}){const event={currentTarget:this,defaultPrevented:false,preventDefault(){this.defaultPrevented=true;},...extra};for(const listener of listeners.get(type)||[])listener(event);return event;},
+   focus(){root.activeElement=this;},
+   showModal(){assert.equal(this.open,false);this.open=true;this.showCount++;},
+   close(){this.open=false;this.dispatch('close');}
+  };
+ }
+ const [trigger,dialog,close]=ids.map(id=>root.elements[id]);
+ return {root,trigger,dialog,close};
+}
+test('help opens natively, focuses close and returns to its exact trigger without submitting',()=>{
+ const {root,trigger,dialog,close}=helpFixture();mountHelpDialog(root);
+ // Pointer activation need not focus the trigger before click is dispatched.
+ root.activeElement={name:'previous financial input'};
+ assert.equal(trigger.dispatch('click').defaultPrevented,true);
+ assert.equal(dialog.open,true);assert.equal(dialog.showCount,1);assert.equal(root.activeElement,close);
+ assert.equal(close.dispatch('click').defaultPrevented,true);
+ assert.equal(dialog.open,false);assert.equal(root.activeElement,trigger);
+});
+test('help Escape and native cancel close and restore focus, unrelated keys leave it open',()=>{
+ const {root,trigger,dialog,close}=helpFixture();mountHelpDialog(root);
+ trigger.dispatch('click');assert.equal(dialog.dispatch('keydown',{key:'Tab'}).defaultPrevented,false);
+ assert.equal(dialog.open,true);assert.equal(root.activeElement,close);
+ assert.equal(dialog.dispatch('keydown',{key:'Escape'}).defaultPrevented,true);
+ assert.equal(dialog.open,false);assert.equal(root.activeElement,trigger);
+ trigger.dispatch('click');assert.equal(dialog.dispatch('cancel').defaultPrevented,true);
+ assert.equal(dialog.open,false);assert.equal(root.activeElement,trigger);
+});
+test('repeated open is safe and stale close events cannot steal reopened help focus',()=>{
+ const {root,trigger,dialog,close}=helpFixture();mountHelpDialog(root);
+ trigger.dispatch('click');trigger.dispatch('click');assert.equal(dialog.showCount,1);
+ close.dispatch('click');trigger.dispatch('click');assert.equal(dialog.showCount,2);
+ dialog.dispatch('close');assert.equal(root.activeElement,close);assert.equal(dialog.open,true);
+ dialog.close();assert.equal(root.activeElement,trigger);
+});
+test('help supports custom IDs, cleanup and disconnected openers',()=>{
+ const {root,trigger,dialog,close}=helpFixture(['help','dialog','close']);
+ const cleanup=mountHelpDialog(root,{triggerId:'help',dialogId:'dialog',closeId:'close'});
+ trigger.dispatch('click');trigger.isConnected=false;dialog.close();assert.equal(root.activeElement,close);
+ cleanup();trigger.dispatch('click');assert.equal(dialog.open,false);assert.equal(dialog.showCount,1);
+ assert.throws(()=>mountHelpDialog(root),/controls are missing/);
+});
+
+import {withdrawalCardSummary} from '../src/view.js';
+test('compact scenario status retains uncertainty and distinguishes locked funds',()=>{const p=createExamplePlan(),r={months:[],firstUnmetWithdrawal:null};assert.match(withdrawalCardSummary(p,r),/Set an annual/);p.drawdown.annualAmount=12000;assert.match(withdrawalCardSummary(p,r),/outside/);r.months=[{month:'2060-01',withdrawalTarget:1000}];assert.match(withdrawalCardSummary(p,r),/Not guaranteed/);r.firstUnmetWithdrawal={month:'2040-01',locked:2000,total:2000};assert.match(withdrawalCardSummary(p,r),/remain locked/);r.firstUnmetWithdrawal.locked=0;r.firstUnmetWithdrawal.total=0;assert.match(withdrawalCardSummary(p,r),/depleted/);});
