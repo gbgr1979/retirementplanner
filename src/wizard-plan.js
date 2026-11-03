@@ -1,12 +1,30 @@
 import {validatePlan, PLAN_VERSION} from './plan.js';
+import {getStatePensionDefaults,FULL_NEW_STATE_PENSION_WEEKLY} from './state-pension-defaults.js';
 const OWNERS = ['you', 'partner'];
 const TYPES = [['savings','savings','cash savings',2,0],['isa','stocksIsa','stocks & shares ISA',5,0.3],['pension','sipp','pension',5,0.5]];
 const monthValid = value => typeof value === 'string' && /^(19\d{2}|20\d{2}|21\d{2}|22[0-4]\d|2250)-(0[1-9]|1[0-2])$/.test(value);
 const numeric = (value,min,max,integer=false) => typeof value === 'number' && Number.isFinite(value) && value>=min && value<=max && (!integer || Number.isInteger(value));
 /** In-memory draft only. Ages intentionally start blank; nothing is saved automatically. */
 export function createWizardDraft(startMonth = new Date().toISOString().slice(0,7)) {
-  return {startMonth, includePartner:false, you:{age:'',retirementAge:67,statePension:{enabled:false,weeklyAmount:'',startMonth:'',escalation:2.5}}, partner:{age:'',retirementAge:67,statePension:{enabled:false,weeklyAmount:'',startMonth:'',escalation:2.5}}, monthlySpending:2000, inflation:2.5,
+  return {startMonth, includePartner:false, you:{age:'',retirementAge:67,statePension:{enabled:true,weeklyAmount:FULL_NEW_STATE_PENSION_WEEKLY,startMonth:'',escalation:2.5}}, partner:{age:'',retirementAge:67,statePension:{enabled:true,weeklyAmount:FULL_NEW_STATE_PENSION_WEEKLY,startMonth:'',escalation:2.5}}, monthlySpending:2000, inflation:2.5,
     pots:OWNERS.flatMap(owner => TYPES.map(([suffix,type,label,growth,fee]) => ({id:`${owner}-${suffix}`,owner,type,name:`${owner==='you'?'Your':"Partner’s"} ${label}`,balance:0,monthlyContribution:0,employerContribution:0,growth,fee})))};
+}
+/** Refresh only untouched new-wizard defaults after timeline changes. Never used on saved plans. */
+export function syncWizardStatePensionDefaults(draft) {
+  draft.pensionDefaultState ??= {};
+  draft.pensionDefaultOverrides ??= {};
+  for (const owner of OWNERS) {
+    const person=draft[owner], result=getStatePensionDefaults({age:person.age,startMonth:draft.startMonth});
+    const previous=draft.pensionDefaultState[owner] ?? {weeklyAmount:FULL_NEW_STATE_PENSION_WEEKLY,startMonth:''};
+    const next={weeklyAmount:result.weeklyAmount ?? '',startMonth:result.startMonth ?? ''};
+    const custom=draft.pensionDefaultOverrides[owner] ??= {};
+    for (const key of ['weeklyAmount','startMonth']) {
+      if (person.statePension[key]!==previous[key]) custom[key]=true;
+      if (!custom[key]) person.statePension[key]=next[key];
+    }
+    draft.pensionDefaultState[owner]={...next,reason:result.reason};
+  }
+  return draft;
 }
 /** Field paths align with form inputs. Review (step 3) checks all earlier steps. */
 export function validateWizardStep(draft,step) {
@@ -74,7 +92,7 @@ export function validateWizardStep(draft,step) {
   }
   return {valid:errors.length===0,errors};
 }
-/** Build fresh schema data; never inherit fictitious example balances or State Pension. */
+/** Build fresh schema data; never inherit fictitious example balances; pension assumptions remain explicit. */
 export function buildWizardPlan(draft) {
   const result=validateWizardStep(draft,3);
   if (!result.valid) throw new Error(result.errors.map(e=>e.message).join('\n'));
