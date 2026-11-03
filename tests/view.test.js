@@ -180,3 +180,46 @@ test('help supports custom IDs, cleanup and disconnected openers',()=>{
 
 import {withdrawalCardSummary} from '../src/view.js';
 test('compact scenario status retains uncertainty and distinguishes locked funds',()=>{const p=createExamplePlan(),r={months:[],firstUnmetWithdrawal:null};assert.match(withdrawalCardSummary(p,r),/Set an annual/);p.drawdown.annualAmount=12000;assert.match(withdrawalCardSummary(p,r),/outside/);r.months=[{month:'2060-01',withdrawalTarget:1000}];assert.match(withdrawalCardSummary(p,r),/Not guaranteed/);r.firstUnmetWithdrawal={month:'2040-01',locked:2000,total:2000};assert.match(withdrawalCardSummary(p,r),/remain locked/);r.firstUnmetWithdrawal.locked=0;r.firstUnmetWithdrawal.total=0;assert.match(withdrawalCardSummary(p,r),/depleted/);});
+
+import {planSummary} from '../src/view.js';
+test('pot summary uses exact retirement opening and final partial-year closing after withdrawals',()=>{
+ const p=createExamplePlan();p.startMonth='2044-10';p.endAge=66;p.people[0].retirementMonth='2044-11';
+ const r=project(p),s=planSummary(p,r,false),ret=r.months.find(m=>m.month==='2044-11'),last=r.months.at(-1);
+ assert.equal(s.retirement.value,ret.opening);assert.equal(s.retirement.month,'2044-11');assert.match(s.retirement.label,/November 2044/);
+ assert.equal(last.month,'2045-10');assert.equal(s.end.value,last.total);assert.equal(s.end.month,last.month);
+ assert.match(s.retirement.dateLabel,/November 2044 · before withdrawals/);assert.match(s.end.dateLabel,/October 2045 · up to your age 66/);assert.match(s.end.note,/before any tax on future withdrawals/);assert.match(s.end.label,/October 2045/);assert.match(s.end.note,/up to your age 66/);assert.match(s.end.note,/before your birthday month/);assert.match(s.end.note,/not a predicted date of death/);
+});
+test('pot summary discounts retirement opening and final closing at their distinct exact month offsets',()=>{
+ const p=createExamplePlan();p.inflation=12;p.people[0].retirementMonth='2026-12';
+ const r={months:[{month:'2026-11',opening:200,total:190},{month:'2026-12',opening:190,total:180},{month:'2027-02',opening:170,total:160}]};
+ const s=planSummary(p,r);assert.equal(s.retirement.value,190/(1.12**(1/12)));assert.equal(s.end.value,160/(1.12**(4/12)));
+ p.people[0].retirementMonth=p.startMonth;assert.equal(planSummary(p,r).retirement.value,200);
+ p.inflation=0;assert.equal(planSummary(p,r).end.value,160);
+});
+test('pot summary includes active partner and locked pots in totals but horizon follows primary identity',()=>{
+ const p=createExamplePlan();p.startMonth='2044-11';p.endAge=66;p.includePartner=true;p.people.reverse();
+ const r=project(p),s=planSummary(p,r,false),last=r.months.at(-1);
+ assert.equal(s.end.value,last.accessible+last.locked);assert.match(s.end.note,/your partner/);assert.match(s.end.note,/age 66/);
+ p.includePartner=false;const solo=planSummary(p,project(p),false);assert.doesNotMatch(solo.end.note,/your partner/);assert.ok(solo.end.value<s.end.value);
+ const locked={months:[{month:'2044-11',opening:100,total:70,accessible:0,locked:70}]};assert.equal(planSummary(p,locked,false).end.value,70);
+});
+test('pot summary keeps zero and depleted balances and never fabricates out-of-range retirement snapshots',()=>{
+ const p=createExamplePlan();p.people[0].retirementMonth=p.startMonth;
+ const r={months:[{month:p.startMonth,opening:0,total:0}]};
+ assert.equal(planSummary(p,r).retirement.value,0);assert.equal(planSummary(p,r).end.value,0);
+ r.months[0].opening=100;assert.equal(planSummary(p,r,false).end.value,0);
+ for(const retirement of ['2025-01','2100-01']){p.people[0].retirementMonth=retirement;const s=planSummary(p,r);assert.equal(s.retirement.value,null);assert.match(s.retirement.note,/no retirement balance/);}
+ assert.equal(planSummary(p,{months:[]}).end.value,null);assert.equal(planSummary(p,{months:[]}).end.month,null);
+});
+test('80-year cap is not presented as reaching an unmodelled planned age',()=>{
+ const p=createExamplePlan();p.people[0].dob='2020-06-01';p.people[0].retirementMonth='2085-06';p.endAge=110;
+ const r=project(p),s=planSummary(p,r,false);assert.equal(s.end.month,'2106-10');assert.equal(s.end.value,r.months.at(-1).total);
+ assert.match(s.end.note,/80-year limit before your planned end age of 110/);assert.doesNotMatch(s.end.note,/Planned up to your age/);
+});
+
+import {ageAtMonthStart} from '../src/view.js';
+test('retirement marker shows actual age at the start of its month, including birthday boundaries',()=>{
+ assert.equal(ageAtMonthStart('1980-11-01','2037-11'),57);assert.equal(ageAtMonthStart('1980-11-15','2037-11'),56);assert.equal(ageAtMonthStart('1980-11-15','2037-12'),57);assert.equal(ageAtMonthStart('1980-11-15','2037-10'),56);
+ assert.equal(ageAtMonthStart('1980-02-29','2037-03'),57);assert.equal(ageAtMonthStart('1980-02-29','2037-02'),56);assert.equal(ageAtMonthStart('bad','2037-11'),null);assert.equal(ageAtMonthStart('1980-02-30','2037-11'),null);
+ const years=[{year:2026},{year:2037},{year:2038}],marker=retirementMarker('2037-11',years,[],'1980-11-01');assert.equal(marker.chartLabel,'Retirement – age 57');assert.match(marker.label,/November 2037/);assert.match(svgChart(years,[],true,marker),/Retirement – age 57/);assert.equal(retirementMarker('2038-11',years,[],'1980-11-01').age,58);assert.equal(retirementMarker('2037-11',years).chartLabel,'Retirement');
+});

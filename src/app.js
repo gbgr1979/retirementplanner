@@ -1,6 +1,6 @@
 import {formatMoneyValue,parseMoneyInput,attachMoneyInputs} from './money-input.js';
 import {mountWizard} from './wizard-ui.js';
-import {escapeHTML,discountFactor,retirementSnapshot,updatePlanScreen,adjustAnnualWithdrawal,withdrawalOutcome,retirementDateLinks,retirementYearControls,shiftRetirementYear,retirementMarker,reconcileRetirementLinks,projectionTimeline,svgChart,mountHelpDialog,withdrawalCardSummary} from './view.js';
+import {escapeHTML,discountFactor,retirementSnapshot,updatePlanScreen,adjustAnnualWithdrawal,withdrawalOutcome,retirementDateLinks,retirementYearControls,shiftRetirementYear,retirementMarker,reconcileRetirementLinks,projectionTimeline,svgChart,mountHelpDialog,withdrawalCardSummary,planSummary} from './view.js';
 import {createExamplePlan,validatePlan,parsePlan,serializePlan} from './plan.js';
 import {project} from './model.js';
 const $=id=>document.getElementById(id);
@@ -34,10 +34,13 @@ function apply(){try{acceptEdits(readEditor());dirty=true;status();notify('');re
 function factor(year){return discountFactor(plan,result?.months||[],year,real);}
 
 function renderResults(){try{result=project(plan,{scenario});}catch(e){notify('Projection could not be calculated: '+e.message,true);return;}
-const years=result.years;if(!years.length)return;$('projection-timeline').textContent=projectionTimeline(plan,result);renderWithdrawalControl();renderRetirementControl();const snapshot=retirementSnapshot(plan,years),retirementMatch=snapshot.withinHorizon,retirement=snapshot.year,firstGap=result.firstUnmetWithdrawal;const fmt=(v,y)=>money(v/factor(y));
+const years=result.years;if(!years.length)return;$('projection-timeline').textContent=projectionTimeline(plan,result);renderWithdrawalControl();renderRetirementControl();const retirement=retirementSnapshot(plan,years).year;
 $('scenario-note').textContent=scenario==='base'?'Your entered growth rates':`${scenario==='lower'?'−':'+'}${plan.scenarioSpread} percentage points on growth`;
-$('metrics').innerHTML=`<div><span>${retirementMatch?'At your retirement year':'At projection end (retirement outside horizon)'} · ${retirement.year}</span><strong>${fmt(retirement.closing,retirement.year)}</strong><small>Illustrative total wealth</small></div><div><span>Accessible that year</span><strong>${fmt(retirement.accessible,retirement.year)}</strong><small>${fmt(retirement.locked,retirement.year)} pension wealth locked</small></div><div><span>First unmet withdrawal target</span><strong>${firstGap?firstGap.month.slice(0,4):plan.drawdown.annualAmount>0?'None shown':'Not set'}</strong><small>${firstGap?(firstGap.locked>0.01?'Some pension wealth is still locked':'Accessible pots cannot meet the target'):plan.drawdown.annualAmount>0?'Within this projection only':'Choose an annual amount above'}</small></div>`;
-const marker=retirementMarker(plan.people.find(p=>p.id==='you').retirementMonth,years,result.months);$('retirement-marker-note').textContent=marker.note;
+const summary=planSummary(plan,result,real),prefix=plan.includePartner?'Household pot':'Pot';
+$('metrics').innerHTML=`<div><span>${prefix} at retirement</span><strong ${summary.retirement.value===null?'class="metric-unavailable"':''}>${summary.retirement.value===null?'Outside this plan':money(summary.retirement.value)}</strong><small>${esc(summary.retirement.dateLabel)}</small></div><div><span>${prefix} left at plan end</span><strong ${summary.end.value===null?'class="metric-unavailable"':''}>${summary.end.value===null?'Not available':money(summary.end.value)}</strong><small>${esc(summary.end.dateLabel)}</small></div>`;
+$('summary-retirement-help').textContent=summary.retirement.note;$('summary-end-help').textContent=summary.end.note;
+
+const marker=retirementMarker(plan.people.find(p=>p.id==='you').retirementMonth,years,result.months,plan.people.find(p=>p.id==='you').dob);$('retirement-marker-note').textContent=marker.note;
 const activePots=plan.pots.filter(p=>plan.includePartner||p.owner!=='partner');$('wealth-chart').innerHTML=svgChart(years,activePots.map((p,i)=>({colour:colours[i%colours.length],values:years.map(y=>(y.balances?.[p.id]||0)/factor(y.year))})),true,marker);
 $('legend').innerHTML=activePots.map((p,i)=>`<span><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="${colours[i%colours.length]}"/></svg> ${esc(p.name)}</span>`).join('');
 $('income-chart').innerHTML=svgChart(years,[{colour:'#21624d',values:years.map(y=>(y.incomeNet+(y.withdrawalsNet||0))/factor(y.year))},{colour:'#ad713c',dash:true,values:years.map(y=>y.spending/factor(y.year))},{colour:'#a84c45',dash:true,values:years.map(y=>y.shortfall/factor(y.year))}]);

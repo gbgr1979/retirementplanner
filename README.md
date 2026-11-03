@@ -161,3 +161,8 @@ The retirement-year controls sit in the Annual withdrawals section. The graph ex
 
 ### Unified scenario card
 The annual withdrawal and retirement year use matching side-by-side controls on desktop, stacking on small screens. Before-tax money basis, retirement month and a short result stay visible. The question-mark help button opens a keyboard-accessible dialog with the detailed rules and inflation switch. Escape or Close returns focus to the help button; opening help does not change the plan.
+
+### Two summary values
+The summary shows the total pot at the **start of the retirement month**, before that month's flows, and the pot left after the **final simulated month**. The end age is a planning horizon, not a prediction of death. The end value includes any locked pensions and is not an after-tax inheritance estimate. Including a partner makes both totals household values, while the horizon remains the primary person's. Both values follow the money-display toggle. If retirement is outside the projection, no retirement value is invented. Shortfall warnings remain in the withdrawal card.
+
+The chart marker reads “Retirement – age N”. Age is calculated at the first day of the selected retirement month, the model's start point; a birthday later in that month has not yet occurred. The axis and accessible marker description retain the calendar year/date.

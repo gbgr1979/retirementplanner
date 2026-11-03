@@ -88,13 +88,15 @@ export function shiftRetirementYear(plan,direction,links=retirementDateLinks(pla
  };
 }
 /** Annual samples cannot locate a monthly balance: deliberately mark the year column. */
-export function retirementMarker(retirementMonth,years,months=[]) {
+export function retirementMarker(retirementMonth,years,months=[],dob=null) {
  const year=Number(retirementMonth.slice(0,4));
  const index=years.findIndex(row=>Number(row.year)===year);
  const inMonths=!months.length||(retirementMonth>=months[0].month&&retirementMonth<=months.at(-1).month);
  const visible=index>=0&&inMonths;
- const label=`Your retirement: ${readableMonth(retirementMonth)}`;
- return {visible,index:visible?index:null,position:visible?index/Math.max(1,years.length-1):null,label,
+ const age=ageAtMonthStart(dob,retirementMonth);
+ const chartLabel=age===null?'Retirement':`Retirement – age ${age}`;
+ const label=`Your retirement: ${readableMonth(retirementMonth)}${age===null?'':` · age ${age} at the start of the month`}`;
+ return {visible,index:visible?index:null,position:visible?index/Math.max(1,years.length-1):null,label,chartLabel,age,
   note:visible?`${label}. The line marks the retirement year’s plotted balance, not an exact monthly balance.`
    :`${label} is outside the projection. No retirement line is shown.`};
 }
@@ -118,7 +120,7 @@ export function projectionTimeline(plan,result) {
 }
 
 /** Pure annual chart rendering: always uses every provided projection year. */
-export function svgChart(years,series,stacked=false,marker=null){const w=760,h=260,left=66,right=16,top=20,bottom=34,plotH=h-top-bottom;const max=Math.max(1,...years.map((y,i)=>stacked?series.reduce((s,a)=>s+(a.values[i]||0),0):Math.max(...series.map(a=>a.values[i]||0))));const x=i=>left+i*(w-left-right)/Math.max(1,years.length-1);const y=v=>h-bottom-v/max*plotH;let svg=`<svg viewBox="0 0 ${w} ${h}" data-start-year="${years[0].year}" data-end-year="${years.at(-1).year}" role="img" aria-label="${stacked?'Projected year-end balances by pot':'Annual estimated cash and spending'}"><title>${stacked?'Wealth projection':'Income and spending'} from ${years[0].year} to ${years.at(-1).year}; full values in the annual ledger below</title>`;for(let i=0;i<4;i++){let value=max*i/3;svg+=`<line x1="${left}" y1="${y(value)}" x2="${w-right}" y2="${y(value)}" class="gridline"/><text x="${left-8}" y="${y(value)+4}" text-anchor="end">£${Math.round(value/1000)}k</text>`;}let base=years.map(()=>0);series.forEach(s=>{if(stacked){const tops=s.values.map((v,i)=>base[i]+v);svg+=`<path fill="${s.colour}" d="M ${tops.map((v,i)=>`${x(i)},${y(v)}`).join(' L ')} L ${base.map((v,i)=>`${x(i)},${y(v)}`).reverse().join(' L ')} Z"/>`;base=tops;}else svg+=`<polyline fill="none" stroke="${s.colour}" stroke-width="3" ${s.dash?'stroke-dasharray="7 5"':''} points="${s.values.map((v,i)=>`${x(i)},${y(v)}`).join(' ')}"/>`;});years.forEach((a,i)=>{if(i===0||i===years.length-1||i%10===0)svg+=`<text x="${x(i)}" y="${h-8}" text-anchor="middle">${a.year}</text>`;});if(marker?.visible){const mx=x(marker.index),anchor=mx>(w-left-right)/2+left?'end':'start',tx=mx+(anchor==='end'?-7:7);svg+=`<g role="img" aria-label="${escapeHTML(marker.label)}"><line class="retirement-marker" x1="${mx}" x2="${mx}" y1="${top}" y2="${h-bottom}"/><text class="retirement-marker-label" x="${tx}" y="${top+12}" text-anchor="${anchor}">Retirement ${escapeHTML(years[marker.index].year)}</text></g>`;}return svg+'</svg>';}
+export function svgChart(years,series,stacked=false,marker=null){const w=760,h=260,left=66,right=16,top=20,bottom=34,plotH=h-top-bottom;const max=Math.max(1,...years.map((y,i)=>stacked?series.reduce((s,a)=>s+(a.values[i]||0),0):Math.max(...series.map(a=>a.values[i]||0))));const x=i=>left+i*(w-left-right)/Math.max(1,years.length-1);const y=v=>h-bottom-v/max*plotH;let svg=`<svg viewBox="0 0 ${w} ${h}" data-start-year="${years[0].year}" data-end-year="${years.at(-1).year}" role="img" aria-label="${stacked?'Projected year-end balances by pot':'Annual estimated cash and spending'}"><title>${stacked?'Wealth projection':'Income and spending'} from ${years[0].year} to ${years.at(-1).year}; full values in the annual ledger below</title>`;for(let i=0;i<4;i++){let value=max*i/3;svg+=`<line x1="${left}" y1="${y(value)}" x2="${w-right}" y2="${y(value)}" class="gridline"/><text x="${left-8}" y="${y(value)+4}" text-anchor="end">£${Math.round(value/1000)}k</text>`;}let base=years.map(()=>0);series.forEach(s=>{if(stacked){const tops=s.values.map((v,i)=>base[i]+v);svg+=`<path fill="${s.colour}" d="M ${tops.map((v,i)=>`${x(i)},${y(v)}`).join(' L ')} L ${base.map((v,i)=>`${x(i)},${y(v)}`).reverse().join(' L ')} Z"/>`;base=tops;}else svg+=`<polyline fill="none" stroke="${s.colour}" stroke-width="3" ${s.dash?'stroke-dasharray="7 5"':''} points="${s.values.map((v,i)=>`${x(i)},${y(v)}`).join(' ')}"/>`;});years.forEach((a,i)=>{if(i===0||i===years.length-1||i%10===0)svg+=`<text x="${x(i)}" y="${h-8}" text-anchor="middle">${a.year}</text>`;});if(marker?.visible){const mx=x(marker.index),anchor=mx>(w-left-right)/2+left?'end':'start',tx=mx+(anchor==='end'?-7:7);svg+=`<g role="img" aria-label="${escapeHTML(marker.label)}"><line class="retirement-marker" x1="${mx}" x2="${mx}" y1="${top}" y2="${h-bottom}"/><text class="retirement-marker-label" x="${tx}" y="${top+12}" text-anchor="${anchor}">${escapeHTML(marker.chartLabel||'Retirement')}</text></g>`;}return svg+'</svg>';}
 
 /** Native modal focus containment; help never reads or changes financial state. */
 export function mountHelpDialog(root,{triggerId='plan-help',dialogId='plan-help-dialog',closeId='plan-help-close'}={}) {
@@ -164,4 +166,40 @@ export function withdrawalCardSummary(plan,result) {
  if(gap)return `Shortfall from ${readableMonth(gap.month)}. ${gap.locked>0.01?'Some pension funds remain locked.':gap.total<=0.01?'Modelled pots depleted.':'Accessible pots cannot cover the target.'}`;
  const last=result.months.filter(m=>m.withdrawalTarget>0).at(-1);
  return last?`Funded through ${readableMonth(last.month)} in this scenario. Not guaranteed.`:'Retirement is outside this projection.';
+}
+
+/** Two monthly pot snapshots. End-of-plan is a planning assumption, not a death forecast. */
+export function planSummary(plan,result,real=true) {
+ const primary=plan.people.find(person=>person.id==='you');
+ const retirementMonth=primary.retirementMonth;
+ const retirementRow=result.months.find(row=>row.month===retirementMonth);
+ const last=result.months.at(-1);
+ const start=monthNumber(plan.startMonth);
+ const value=(amount,month,closing)=>amount/(real?Math.pow(1+plan.inflation/100,(monthNumber(month)-start+(closing?1:0))/12):1);
+ const basis=real?'Values are in projection-start money.':'Values are in future money.';
+ const scope=(plan.includePartner?'Includes your and your partner’s active pots, including locked pensions.':'Includes all your active pots, including locked pensions.')+' Pension balances are before any tax on future withdrawals; this is not a net estate valuation.';
+ const ageEnd=monthNumber(primary.dob)+plan.endAge*12;
+ const capped=ageEnd>start+80*12;
+ const horizon=capped?`The projection reaches its 80-year limit before your planned end age of ${plan.endAge}.`
+  :`Planned up to your age ${plan.endAge}, ending just before your birthday month.`;
+ return {
+  retirement:{value:retirementRow?value(retirementRow.opening,retirementMonth,false):null,month:retirementMonth,
+   dateLabel:`${readableMonth(retirementMonth)} · ${retirementRow?'before withdrawals':'outside projection'}`,
+   label:`At retirement · ${readableMonth(retirementMonth)}`,
+   note:retirementRow?`Before that month’s growth, contributions and withdrawals. ${scope} ${basis}`
+    :`Retirement is ${retirementMonth<plan.startMonth?'before the projection starts':'outside the projection'}, so no retirement balance is available.`},
+  end:{value:last?value(last.total,last.month,true):null,month:last?.month??null,
+   dateLabel:last?`${readableMonth(last.month)} · ${capped?'80-year projection limit':`up to your age ${plan.endAge}`}`:'No projected months',
+   label:last?`At end of plan · ${readableMonth(last.month)}`:'At end of plan',
+   note:last?`${horizon} After the final month’s withdrawals. ${scope} This is a planning horizon, not a predicted date of death or a guaranteed inheritance. ${basis}`
+    :'No projected months are available, so no end-of-plan balance is available.'}
+ };
+}
+
+/** Retirement is modelled from day one of its selected month, not an invented day. */
+export function ageAtMonthStart(dob,month) {
+ if(typeof dob!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(dob)||typeof month!=='string'||!/^\d{4}-\d{2}$/.test(month))return null;
+ const birth=new Date(`${dob}T00:00:00Z`),date=new Date(`${month}-01T00:00:00Z`);
+ if(!Number.isFinite(birth.getTime())||!Number.isFinite(date.getTime())||birth.toISOString().slice(0,10)!==dob||date.toISOString().slice(0,7)!==month||date<birth)return null;
+ return date.getUTCFullYear()-birth.getUTCFullYear()-(date.getUTCMonth()<birth.getUTCMonth()||(date.getUTCMonth()===birth.getUTCMonth()&&birth.getUTCDate()>1)?1:0);
 }
