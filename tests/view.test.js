@@ -87,5 +87,17 @@ test('unrelated editor changes preserve original retirement matching dates after
  const kept=reconcileRetirementLinks(later,edit,links);assert.deepEqual(kept,links);
  assert.equal(shiftRetirementYear(edit,-1,kept).pots[1].contributionEnd,p.pots[1].contributionEnd);
  edit.pots[0].contributionEnd='2090-01';assert.ok(!reconcileRetirementLinks(later,edit,links).potIds.includes(edit.pots[0].id));
- edit.people[0].retirementMonth='2040-02';assert.deepEqual(reconcileRetirementLinks(later,edit,links),retirementDateLinks(edit));
+ edit.people[0].retirementMonth='2040-02';assert.deepEqual(reconcileRetirementLinks(later,edit,links),{potIds:[],spending:false});
+});
+
+import {parsePlan,serializePlan} from '../src/plan.js';
+test('saved plans do not guess automatic date links after reloading a custom-date collision',()=>{
+ const p=createExamplePlan(),ret=p.people[0].retirementMonth;p.pots[0].contributionEnd=ret;
+ p.pots[1].owner='you';p.pots[1].contributionEnd=`${Number(ret.slice(0,4))+1}${ret.slice(4)}`;
+ const later=shiftRetirementYear(p,1,retirementDateLinks(p)),loaded=parsePlan(serializePlan(later));
+ const unlinked={potIds:[],spending:false},back=shiftRetirementYear(loaded,-1,unlinked);
+ assert.equal(back.pots[1].contributionEnd,p.pots[1].contributionEnd);assert.deepEqual(back.pots,loaded.pots);assert.equal(back.spendingStart,loaded.spendingStart);
+ const manual=structuredClone(loaded);manual.people[0].retirementMonth=ret;
+ assert.deepEqual(reconcileRetirementLinks(loaded,manual,unlinked),unlinked);
+ manual.pots[0].contributionEnd=ret;assert.deepEqual(reconcileRetirementLinks(loaded,manual,unlinked).potIds,[manual.pots[0].id]);
 });

@@ -23,3 +23,5 @@ test('currency presentation is shared across editor wizard and annual control wi
  assert.match(html,/id="withdrawal-amount" type="text" data-money inputmode="decimal"/);
  const {staticFiles}=await import('../scripts/static-files.mjs');assert.ok(staticFiles.includes('src/money-input.js'));
 });
+
+test('file loading does not infer ambiguous retirement date links',async()=>{const app=await readFile('src/app.js','utf8');assert.match(app,/plan=loaded;retirementLinks=\{potIds:\[\],spending:false\}/);});

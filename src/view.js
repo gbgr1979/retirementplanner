@@ -102,6 +102,6 @@ export function retirementMarker(retirementMonth,years,months=[]) {
 /** Preserve inferred matching dates across comparisons; re-link only explicitly edited dates. */
 export function reconcileRetirementLinks(previous,candidate,links) {
  const retirement=candidate.people.find(p=>p.id==='you').retirementMonth;
- if(retirement!==previous.people.find(p=>p.id==='you').retirementMonth)return retirementDateLinks(candidate);
- return {spending:candidate.spendingStart!==previous.spendingStart?candidate.spendingStart===retirement:links.spending,potIds:candidate.pots.filter(p=>{const old=previous.pots.find(o=>o.id===p.id);return !old||old.owner!==p.owner||old.contributionEnd!==p.contributionEnd?p.owner==='you'&&p.contributionEnd===retirement:links.potIds.includes(p.id);}).map(p=>p.id)};
+ const changedRetirement=retirement!==previous.people.find(p=>p.id==='you').retirementMonth;
+ return {spending:candidate.spendingStart!==previous.spendingStart?candidate.spendingStart===retirement:links.spending&&(!changedRetirement||candidate.spendingStart===retirement),potIds:candidate.pots.filter(p=>{const old=previous.pots.find(o=>o.id===p.id);return !old||old.owner!==p.owner||old.contributionEnd!==p.contributionEnd?p.owner==='you'&&p.contributionEnd===retirement:links.potIds.includes(p.id)&&(!changedRetirement||p.contributionEnd===retirement);}).map(p=>p.id)};
 }
