@@ -101,3 +101,29 @@ test('saved plans do not guess automatic date links after reloading a custom-dat
  assert.deepEqual(reconcileRetirementLinks(loaded,manual,unlinked),unlinked);
  manual.pots[0].contributionEnd=ret;assert.deepEqual(reconcileRetirementLinks(loaded,manual,unlinked).potIds,[manual.pots[0].id]);
 });
+
+import {projectionTimeline,svgChart} from '../src/view.js';
+import {project} from '../src/model.js';
+import {createWizardDraft,buildWizardPlan} from '../src/wizard-plan.js';
+test('wizard timeline and actual SVG keep the projection start before and after retirement-year changes',()=>{
+ const draft=createWizardDraft('2026-11');draft.you.age=47;draft.you.retirementAge=57;
+ const plan=buildWizardPlan(draft);assert.equal(plan.people[0].retirementMonth,'2036-11');
+ for(const candidate of [plan,shiftRetirementYear(plan,1),shiftRetirementYear(plan,-1)]){
+  const result=project(candidate),years=result.years,marker=retirementMarker(candidate.people[0].retirementMonth,years,result.months);
+  assert.equal(result.months[0].month,'2026-11');assert.equal(years[0].year,2026);assert.ok(marker.index>0);
+  const series=[{colour:'#21624d',values:years.map(y=>y.closing)}],svg=svgChart(years,series,true,marker);
+  assert.match(svg,/data-start-year="2026"/);assert.match(svg,/>2026<\/text>/);assert.match(svg,/d="M 66,/);
+  assert.equal((svg.match(/class="retirement-marker"/g)||[]).length,1);assert.match(projectionTimeline(candidate,result),/Projection starts November 2026/);
+ }
+});
+test('saved past or future projection starts are kept rather than silently relabelled as today',()=>{
+ for(const start of ['2020-11','2030-11']){const p=createExamplePlan();p.startMonth=start;
+  const loaded=parsePlan(serializePlan(p)),r=project(loaded),marker=retirementMarker(loaded.people[0].retirementMonth,r.years,r.months);
+  assert.equal(r.months[0].month,start);assert.match(svgChart(r.years,[],true,marker),new RegExp(`data-start-year="${start.slice(0,4)}"`));assert.match(projectionTimeline(loaded,r),new RegExp(`Projection starts November ${start.slice(0,4)}`));
+ }
+});
+test('retirement at the projection start is explained without dropping or inventing earlier years',()=>{
+ const p=createExamplePlan();p.people[0].retirementMonth=p.startMonth;const r=project(p),marker=retirementMarker(p.startMonth,r.years,r.months);
+ assert.equal(marker.index,0);assert.match(projectionTimeline(p,r),/Retirement is set to the projection start/);
+ assert.match(svgChart(r.years,[],true,marker),new RegExp(`data-start-year="${p.startMonth.slice(0,4)}"`));
+});

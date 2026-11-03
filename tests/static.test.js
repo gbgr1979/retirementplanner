@@ -25,3 +25,8 @@ test('currency presentation is shared across editor wizard and annual control wi
 });
 
 test('file loading does not infer ambiguous retirement date links',async()=>{const app=await readFile('src/app.js','utf8');assert.match(app,/plan=loaded;retirementLinks=\{potIds:\[\],spending:false\}/);});
+
+test('retirement controls sit inside annual withdrawals, not the wealth chart',async()=>{
+ const html=await readFile('index.html','utf8'),withdrawal=html.slice(html.indexOf('<article class="withdrawal-card"'),html.indexOf('</article>',html.indexOf('<article class="withdrawal-card"')));
+ assert.match(withdrawal,/id="retirement-minus"/);assert.match(withdrawal,/id="retirement-plus"/);assert.equal((html.match(/id="retirement-date"/g)||[]).length,1);assert.match(html,/id="projection-timeline"/);
+});
