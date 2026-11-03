@@ -105,3 +105,17 @@ export function reconcileRetirementLinks(previous,candidate,links) {
  const changedRetirement=retirement!==previous.people.find(p=>p.id==='you').retirementMonth;
  return {spending:candidate.spendingStart!==previous.spendingStart?candidate.spendingStart===retirement:links.spending&&(!changedRetirement||candidate.spendingStart===retirement),potIds:candidate.pots.filter(p=>{const old=previous.pots.find(o=>o.id===p.id);return !old||old.owner!==p.owner||old.contributionEnd!==p.contributionEnd?p.owner==='you'&&p.contributionEnd===retirement:links.potIds.includes(p.id)&&(!changedRetirement||p.contributionEnd===retirement);}).map(p=>p.id)};
 }
+
+/** Stored projection dates define the chart domain; retirement never clips it. */
+export function projectionTimeline(plan,result) {
+ const start=result.months[0]?.month||plan.startMonth,end=result.months.at(-1)?.month;
+ const retirement=plan.people.find(p=>p.id==='you').retirementMonth;
+ const span=`Projection starts ${readableMonth(start)}${end?` and runs to ${readableMonth(end)}`:''}.`;
+ const timing=retirement===start?'Retirement is set to the projection start, so planned withdrawals begin immediately.'
+  :retirement<start?'Retirement is before the projection start, so planned withdrawals begin at the start of this projection.'
+  :`Retirement is set to ${readableMonth(retirement)}; the chart includes the years before it.`;
+ return `${span} ${timing}`;
+}
+
+/** Pure annual chart rendering: always uses every provided projection year. */
+export function svgChart(years,series,stacked=false,marker=null){const w=760,h=260,left=66,right=16,top=20,bottom=34,plotH=h-top-bottom;const max=Math.max(1,...years.map((y,i)=>stacked?series.reduce((s,a)=>s+(a.values[i]||0),0):Math.max(...series.map(a=>a.values[i]||0))));const x=i=>left+i*(w-left-right)/Math.max(1,years.length-1);const y=v=>h-bottom-v/max*plotH;let svg=`<svg viewBox="0 0 ${w} ${h}" data-start-year="${years[0].year}" data-end-year="${years.at(-1).year}" role="img" aria-label="${stacked?'Projected year-end balances by pot':'Annual estimated cash and spending'}"><title>${stacked?'Wealth projection':'Income and spending'} from ${years[0].year} to ${years.at(-1).year}; full values in the annual ledger below</title>`;for(let i=0;i<4;i++){let value=max*i/3;svg+=`<line x1="${left}" y1="${y(value)}" x2="${w-right}" y2="${y(value)}" class="gridline"/><text x="${left-8}" y="${y(value)+4}" text-anchor="end">£${Math.round(value/1000)}k</text>`;}let base=years.map(()=>0);series.forEach(s=>{if(stacked){const tops=s.values.map((v,i)=>base[i]+v);svg+=`<path fill="${s.colour}" d="M ${tops.map((v,i)=>`${x(i)},${y(v)}`).join(' L ')} L ${base.map((v,i)=>`${x(i)},${y(v)}`).reverse().join(' L ')} Z"/>`;base=tops;}else svg+=`<polyline fill="none" stroke="${s.colour}" stroke-width="3" ${s.dash?'stroke-dasharray="7 5"':''} points="${s.values.map((v,i)=>`${x(i)},${y(v)}`).join(' ')}"/>`;});years.forEach((a,i)=>{if(i===0||i===years.length-1||i%10===0)svg+=`<text x="${x(i)}" y="${h-8}" text-anchor="middle">${a.year}</text>`;});if(marker?.visible){const mx=x(marker.index),anchor=mx>(w-left-right)/2+left?'end':'start',tx=mx+(anchor==='end'?-7:7);svg+=`<g role="img" aria-label="${escapeHTML(marker.label)}"><line class="retirement-marker" x1="${mx}" x2="${mx}" y1="${top}" y2="${h-bottom}"/><text class="retirement-marker-label" x="${tx}" y="${top+12}" text-anchor="${anchor}">Retirement ${escapeHTML(years[marker.index].year)}</text></g>`;}return svg+'</svg>';}
