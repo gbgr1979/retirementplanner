@@ -63,7 +63,7 @@ export function mountStatePension({root = document, getPlan, onComplete, onError
   let snapshot = null, draft = null, opener = trigger;
   const find = id => content.querySelector(`#${id}`);
   const close = () => dialog.close();
-  const reset = () => { if (dialog.open) return; snapshot = null; draft = null; opener?.focus(); };
+  const reset = () => { if (dialog.open) return; snapshot = null; draft = null; const returnTo=opener?.isConnected===false ? root.querySelector(`#${opener.id}`) || trigger : opener; returnTo?.focus(); };
   function showError(error) {
     const summary = find('sp-errors');
     summary.hidden = false; summary.textContent = error.message;
@@ -73,7 +73,7 @@ export function mountStatePension({root = document, getPlan, onComplete, onError
   }
   function render() {
     content.innerHTML = `<h2 id="sp-title" tabindex="-1">Set up State Pension</h2>
-      <p>Add your own gross forecast in projection-start (${esc(snapshot.startMonth)}) pounds. No entitlement or claim date is assumed. <a href="https://www.gov.uk/check-state-pension" target="_blank" rel="noopener noreferrer">Check your State Pension forecast</a> and <a href="https://www.gov.uk/state-pension-age" target="_blank" rel="noopener noreferrer">State Pension age</a>.</p>
+      <p>Add your own gross forecast in projection-start (${esc(snapshot.startMonth)}) pounds. Existing figures may be illustrations rather than your entitlement. Check the amount and claim date. <a href="https://www.gov.uk/check-state-pension" target="_blank" rel="noopener noreferrer">Check your State Pension forecast</a> and <a href="https://www.gov.uk/state-pension-age" target="_blank" rel="noopener noreferrer">State Pension age</a>.</p>
       <p class="help">We convert weekly × 52 ÷ 12 into an average calendar-month income, not a four-weekly payment. The claim month is modelled as a whole month. Annual increases apply from the projection start, including years before claiming. This is your assumption, not a guaranteed uprating or triple-lock forecast.</p>
       <div id="sp-errors" role="alert" tabindex="-1" hidden></div>
       <form id="sp-form" novalidate>${activePeople(snapshot).map(person => {

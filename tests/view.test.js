@@ -106,7 +106,7 @@ import {projectionTimeline,svgChart} from '../src/view.js';
 import {project} from '../src/model.js';
 import {createWizardDraft,buildWizardPlan} from '../src/wizard-plan.js';
 test('wizard timeline and actual SVG keep the projection start before and after retirement-year changes',()=>{
- const draft=createWizardDraft('2026-11');draft.you.age=47;draft.you.retirementAge=57;
+ const draft=createWizardDraft('2026-11');draft.you.age=47;draft.you.retirementAge=57;draft.you.statePension.enabled=false;
  const plan=buildWizardPlan(draft);assert.equal(plan.people[0].retirementMonth,'2036-11');
  for(const candidate of [plan,shiftRetirementYear(plan,1),shiftRetirementYear(plan,-1)]){
   const result=project(candidate),years=result.years,marker=retirementMarker(candidate.people[0].retirementMonth,years,result.months);

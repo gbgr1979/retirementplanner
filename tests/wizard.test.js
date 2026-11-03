@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createWizardDraft,validateWizardStep,buildWizardPlan} from '../src/wizard-plan.js';
+import {createWizardDraft,syncWizardStatePensionDefaults,validateWizardStep,buildWizardPlan} from '../src/wizard-plan.js';
 import {validatePlan,serializePlan,parsePlan} from '../src/plan.js';
 import {project} from '../src/model.js';
-const ready=()=>{const draft=createWizardDraft('2026-11');draft.you.age=47;return draft;};
+const ready=()=>{const draft=createWizardDraft('2026-11');draft.you.age=47;draft.you.statePension.enabled=false;draft.partner.statePension.enabled=false;return draft;};
 test('new wizard has blank ages, zero balances and six independent pots',()=>{
  const d=createWizardDraft('2026-11');assert.equal(d.you.age,'');assert.equal(d.partner.age,'');assert.equal(d.pots.length,6);assert.ok(d.pots.every(p=>p.balance===0&&p.monthlyContribution===0&&p.employerContribution===0));assert.equal(validateWizardStep(d,0).valid,false);
  d.pots[0].balance=4;assert.equal(createWizardDraft('2026-11').pots[0].balance,0);
@@ -52,7 +52,7 @@ test('fresh pension uses statutory access age rather than inventing a 57 minimum
  assert.equal(forecast.months.find(m=>m.month==='2030-11').accessible,1000);
 });
 
-test('excluded partner placeholder cannot be mistaken for entered details',()=>{const draft=createWizardDraft('2026-11');draft.you.age=47;const plan=buildWizardPlan(draft);assert.equal(plan.people.find(p=>p.id==='partner').name,'Partner (details not entered)');assert.equal(plan.includePartner,false);});
+test('excluded partner placeholder cannot be mistaken for entered details',()=>{const draft=createWizardDraft('2026-11');draft.you.age=47;syncWizardStatePensionDefaults(draft);const plan=buildWizardPlan(draft);assert.equal(plan.people.find(p=>p.id==='partner').name,'Partner (details not entered)');assert.equal(plan.includePartner,false);});
 
 test('wizard v3 uses annual gross draw target from monthly spending, without assumed pension income',()=>{
  const d=ready();d.monthlySpending=2400;const p=buildWizardPlan(d);assert.equal(p.version,3);assert.deepEqual(p.drawdown,{mode:'pots',annualAmount:28800,inflationLinked:true});assert.deepEqual(p.incomes,[]);assert.deepEqual(p.events,[]);
@@ -60,10 +60,18 @@ test('wizard v3 uses annual gross draw target from monthly spending, without ass
 });
 
 const forecast=(d,owner='you',overrides={})=>Object.assign(d[owner].statePension,{enabled:true,weeklyAmount:230.25,startMonth:'2046-11',escalation:2.5},overrides);
-test('State Pension defaults are separate, blank, opted out and have no assumed entitlement',()=>{
- const d=ready();assert.deepEqual(d.you.statePension,{enabled:false,weeklyAmount:'',startMonth:'',escalation:2.5});assert.deepEqual(d.partner.statePension,d.you.statePension);
- d.you.statePension.weeklyAmount=12;assert.equal(d.partner.statePension.weeklyAmount,'');assert.equal(createWizardDraft().you.statePension.weeklyAmount,'');
- assert.deepEqual(buildWizardPlan(d).incomes,[]);assert.equal(buildWizardPlan(d).drawdown.mode,'pots');
+test('new wizard defaults use full-rate illustration independently for each person',()=>{
+ const d=createWizardDraft('2026-11');assert.equal(d.you.statePension.enabled,true);assert.equal(d.you.statePension.weeklyAmount,241.3);assert.equal(d.you.statePension.escalation,2.5);
+ d.you.age=47;d.partner.age=49;d.includePartner=true;syncWizardStatePensionDefaults(d);
+ assert.equal(d.you.statePension.startMonth,'2047-11');assert.equal(d.partner.statePension.startMonth,'2045-06');
+ const p=buildWizardPlan(d);assert.equal(p.incomes.length,2);assert.equal(p.drawdown.mode,'totalIncome');assert.ok(Math.abs(p.incomes[0].monthlyAmount*12-12547.6)<1e-9);
+ d.you.statePension.weeklyAmount=100;d.you.statePension.startMonth='2050-01';d.you.statePension.enabled=false;d.you.age=48;syncWizardStatePensionDefaults(d);
+ assert.equal(d.you.statePension.weeklyAmount,100);assert.equal(d.you.statePension.startMonth,'2050-01');assert.equal(d.you.statePension.enabled,false);assert.equal(d.partner.statePension.weeklyAmount,241.3);
+});
+test('untouched dates follow changed ages but older unknown eligibility requires personal details',()=>{
+ const d=createWizardDraft('2026-11');d.you.age=47;syncWizardStatePensionDefaults(d);d.you.age=48;syncWizardStatePensionDefaults(d);assert.equal(d.you.statePension.startMonth,'2046-11');
+ d.you.age=80;d.you.retirementAge=80;syncWizardStatePensionDefaults(d);assert.equal(d.you.statePension.weeklyAmount,'');assert.equal(d.you.statePension.startMonth,'');assert.equal(validateWizardStep(d,1).valid,false);
+ d.you.statePension.enabled=false;assert.equal(validateWizardStep(d,1).valid,true);
 });
 test('explicit forecast builds exactly one deterministic income with weekly annual conversion',()=>{
  const d=ready();forecast(d);const before=structuredClone(d), p=buildWizardPlan(d), income=p.incomes[0];
@@ -78,7 +86,7 @@ test('disabled forecasts retain but ignore invalid values, zero creates no incom
  d.you.statePension.enabled='true';assert.equal(validateWizardStep(d,1).valid,false);
 });
 test('enabled forecast requires explicit valid amount, claim month and editable escalation at money step',()=>{
- const d=ready();d.you.statePension.enabled=true;assert.equal(validateWizardStep(d,0).valid,true);assert.equal(validateWizardStep(d,1).valid,false);assert.throws(()=>buildWizardPlan(d),/State Pension/);
+ const d=ready();d.you.statePension.enabled=true;d.you.statePension.weeklyAmount='';assert.equal(validateWizardStep(d,0).valid,true);assert.equal(validateWizardStep(d,1).valid,false);assert.throws(()=>buildWizardPlan(d),/State Pension/);
  for(const weeklyAmount of ['', '230', NaN,Infinity,-1,10000.01]) {forecast(d,'you',{weeklyAmount});assert.ok(validateWizardStep(d,1).errors.some(e=>e.field==='you.statePension.weeklyAmount'));}
  for(const startMonth of ['', '2046-13','1979-10','1979-11','2251-01',null]) {forecast(d,'you',{startMonth});assert.ok(validateWizardStep(d,1).errors.some(e=>e.field==='you.statePension.startMonth'));}
  for(const escalation of ['', '2.5', NaN,Infinity,-0.1,15.01]) {forecast(d,'you',{escalation});assert.ok(validateWizardStep(d,1).errors.some(e=>e.field==='you.statePension.escalation'));}
@@ -94,4 +102,13 @@ test('partner forecast needs active partner and explicit opt in; toggles never d
 test('forecast can begin before plan start or after projection without guessing another claim date',()=>{
  const d=ready();forecast(d,'you',{startMonth:'2025-01'});assert.equal(buildWizardPlan(d).incomes[0].startMonth,'2025-01');
  forecast(d,'you',{startMonth:'2080-01'});const p=buildWizardPlan(d);assert.equal(p.incomes[0].startMonth,'2080-01');assert.equal(p.incomes[0].endMonth,'2250-12');assert.ok(project(p).months.every(m=>m.incomeGross===0));
+});
+
+test('explicit claim override survives collisions with later inferred defaults and partner toggles',()=>{
+ const d=createWizardDraft('2026-11');d.you.age=47;d.partner.age=47;d.includePartner=true;syncWizardStatePensionDefaults(d);
+ for(const owner of ['you','partner'])d[owner].statePension.startMonth='2048-11';
+ d.you.age=46;d.partner.age=46;d.includePartner=false;syncWizardStatePensionDefaults(d);
+ d.you.age=45;d.partner.age=45;d.includePartner=true;syncWizardStatePensionDefaults(d);
+ assert.equal(d.you.statePension.startMonth,'2048-11');assert.equal(d.partner.statePension.startMonth,'2048-11');
+ assert.equal(buildWizardPlan(d).incomes[1].startMonth,'2048-11');
 });
