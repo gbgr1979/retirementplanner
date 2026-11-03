@@ -46,6 +46,9 @@ export function project(plan, {scenario='base'}={}) {
   const primary = personMap.get('you');
   if(!primary) throw new Error('Primary person is required');
   const pots = plan.pots.filter(p=>personMap.has(p.owner));
+  const drawdown = plan.drawdown ?? {annualAmount:0,inflationLinked:false};
+  const priority = {savings:0,cashIsa:1,stocksIsa:2,sipp:3,workplace:3};
+  const drawdownPots = pots.map((pot,index)=>({pot,index})).sort((a,b)=>priority[a.pot.type]-priority[b.pot.type] || Number(a.pot.owner==='partner')-Number(b.pot.owner==='partner') || a.index-b.index).map(item=>item.pot);
   const potMap = new Map(pots.map(p=>[p.id,p]));
   const balances = dictionary(pots.map(p=>[p.id,p.balance]));
   const lumpSumRemaining = dictionary(people.map(p=>[p.id,Math.max(0,268275-p.taxFreeUsed)]));
@@ -63,7 +66,10 @@ export function project(plan, {scenario='base'}={}) {
     'DC withdrawals assume uncrystallised funds: 25% tax-free, capped by each owner’s remaining standard £268,275 lump-sum allowance. Existing crystallised pots, protected allowances and other benefit events are unsupported.',
     'Only modelled non-savings income and taxable DC withdrawals enter income tax. Savings-interest tax, NI, capital gains, dividends, benefits, marriage allowance, contribution tax deductions and higher-rate relief are excluded.',
     'Spending and income begin as amounts in plan-start pounds, then rise at inflation / each income’s escalation. Event amounts are fixed future nominal gross withdrawals.',
-    'No automatic drawdown: spending shortfalls are unfunded, never secretly taken from another pot. Withdrawn surplus is not reinvested or carried forward.',
+    'An optional annual gross withdrawal target starts in the primary person’s retirement month. It is split monthly; inflation-linked targets use plan-start purchasing power, otherwise they stay fixed nominal.',
+    'Successful scheduled gross withdrawals offset only that month’s target. Transfers and rejected events do not count; events exceeding the target still execute in full, with no credit against future months.',
+    'After scheduled events, the remaining target draws from accessible active pots in this order: cash savings, cash ISA, stocks and shares ISA, then SIPP/workplace DC together. Within each group, your pots precede your partner’s, retaining listed order. Partial funding is reported, never a negative balance.',
+    'The target is gross, not a promised net income or a tax-optimised strategy. Income streams remain independent; spending compares cash received and does not cause another withdrawal. Withdrawn surplus is not reinvested or carried forward.',
     'Contributions are funded externally, not subtracted from household spending. They stop at the owner’s retirement month or the specified end month, whichever is earlier.',
     'Transfers only move accessible non-pension pots belonging to the same owner; they do not represent formal ISA transfers, enforce subscription rules or model pensions transfers.',
     'No State Pension entitlement is inferred: enter your forecast and start month. No deaths, survivor benefits, IHT or care costs are inferred.'
@@ -77,7 +83,7 @@ export function project(plan, {scenario='base'}={}) {
   const mpaaOwners = new Set();
   for(let index=begin; index<end; index++) {
     const month=monthText(index), opening=sum(Object.values(balances));
-    const row={month,opening,balances:dictionary(),accessible:0,locked:0,total:0,incomeGross:0,incomeNet:0,withdrawalsGross:0,withdrawalsNet:0,tax:0,spending:0,shortfall:0,contributions:0,growth:0,fees:0,warnings:[],potLedger:dictionary(),taxComplete:false};
+    const row={month,opening,balances:dictionary(),accessible:0,locked:0,total:0,incomeGross:0,incomeNet:0,withdrawalsGross:0,withdrawalsNet:0,withdrawalTarget:0,scheduledWithdrawalsGross:0,recurringWithdrawalsGross:0,unmetWithdrawal:0,tax:0,spending:0,shortfall:0,contributions:0,growth:0,fees:0,warnings:[],potLedger:dictionary(),taxComplete:false};
     const ownerFlows=dictionary(people.map(p=>[p.id,{income:0,taxableWithdrawal:0,withdrawal:0}]));
     for(const pot of pots) {
       const person=personMap.get(pot.owner);
@@ -102,6 +108,23 @@ export function project(plan, {scenario='base'}={}) {
         ownerFlows[income.owner].income+=amount;row.incomeGross+=amount;
       }
     }
+    // One accounting path for both explicit events and recurring withdrawals.
+    // Caller has checked access and sufficient balance; amount is actual gross removed.
+    function removeForSpending(pot, amount, recurring=false) {
+      balances[pot.id]=Math.max(0,balances[pot.id]-amount);
+      row.withdrawalsGross+=amount;
+      row[recurring?'recurringWithdrawalsGross':'scheduledWithdrawalsGross']+=amount;
+      row.potLedger[pot.id].withdrawals+=amount;
+      const flow=ownerFlows[pot.owner];flow.withdrawal+=amount;
+      if(PENSION.has(pot.type)) {
+        const taxFree=Math.min(amount*.25,lumpSumRemaining[pot.owner]);
+        lumpSumRemaining[pot.owner]-=taxFree;flow.taxableWithdrawal+=amount-taxFree;
+        if(amount>taxFree) {
+          mpaaOwners.add(pot.owner);
+          warnings.add(`${personMap.get(pot.owner).name}: a modelled taxable flexible pension withdrawal may trigger the money purchase annual allowance. Confirm your position before making further DC contributions.`);
+        }
+      }
+    }
     for(const event of plan.events.filter(e=>e.month===month)) {
       const pot=potMap.get(event.potId);
       if(!pot) continue; // A disabled partner's events are intentionally inactive.
@@ -110,25 +133,23 @@ export function project(plan, {scenario='base'}={}) {
       if(!pensionAccessible(pot,person,month)) {warn(row,`${prefix}: rejected; pension is not accessible.`);continue;}
       const target=potMap.get(event.toPotId);
       if(event.type==='transfer'&&(!target||target.owner!==pot.owner||target.id===pot.id||PENSION.has(pot.type)||PENSION.has(target.type))) {warn(row,`${prefix}: rejected; only same-owner non-pension transfers are supported.`);continue;}
-      if(event.amount>balances[pot.id]+0.000001) {warn(row,`${prefix}: rejected; insufficient funds in ${pot.name}. No partial withdrawal or fallback was made.`);continue;}
-      balances[pot.id]=Math.max(0,balances[pot.id]-event.amount);
+      if(event.amount>balances[pot.id]) {warn(row,`${prefix}: rejected; insufficient funds in ${pot.name}. No partial withdrawal or fallback was made.`);continue;}
       if(event.type==='transfer') {
+        balances[pot.id]=Math.max(0,balances[pot.id]-event.amount);
         balances[target.id]+=event.amount;row.potLedger[pot.id].transfersOut+=event.amount;row.potLedger[target.id].transfersIn+=event.amount;
         if(target.type.endsWith('Isa')) warnings.add(`${prefix}: ISA transfer/subscription treatment is not checked. Confirm the permitted transfer process and annual subscription allowance.`);
-      } else {
-        row.withdrawalsGross+=event.amount;row.potLedger[pot.id].withdrawals+=event.amount;
-        const flow=ownerFlows[pot.owner]; flow.withdrawal+=event.amount;
-        if(PENSION.has(pot.type)) {
-          const taxFree=Math.min(event.amount*.25,lumpSumRemaining[pot.owner]);
-          lumpSumRemaining[pot.owner]-=taxFree;
-          flow.taxableWithdrawal+=event.amount-taxFree;
-          if(event.amount>taxFree) {
-            mpaaOwners.add(pot.owner);
-            warnings.add(`${person.name}: a modelled taxable flexible pension withdrawal may trigger the money purchase annual allowance. Confirm your position before making further DC contributions.`);
-          }
-        }
-      }
+      } else removeForSpending(pot,event.amount);
     }
+    row.withdrawalTarget=month>=primary.retirementMonth
+      ? drawdown.annualAmount/12*(drawdown.inflationLinked?Math.pow(1+plan.inflation/100,(index-begin)/12):1):0;
+    let remaining=Math.max(0,row.withdrawalTarget-row.scheduledWithdrawalsGross);
+    for(const pot of drawdownPots) {
+      if(remaining<=0) break;
+      if(!pensionAccessible(pot,personMap.get(pot.owner),month)) continue;
+      const amount=Math.min(remaining,balances[pot.id]);
+      if(amount>0) {removeForSpending(pot,amount,true);remaining=Math.max(0,remaining-amount);}
+    }
+    row.unmetWithdrawal=Math.max(0,row.withdrawalTarget-row.withdrawalsGross);
     row.spending=month>=plan.spendingStart?plan.monthlySpending*Math.pow(1+plan.inflation/100,(index-begin)/12):0;
     for(const pot of pots) {
       row.potLedger[pot.id].closing=balances[pot.id];
@@ -163,9 +184,9 @@ export function project(plan, {scenario='base'}={}) {
     row.shortfall=Math.max(0,row.spending-row.incomeNet-row.withdrawalsNet);
     row.surplus=Math.max(0,row.incomeNet+row.withdrawalsNet-row.spending);
     const year=Number(row.month.slice(0,4));
-    if(!yearMap.has(year)) yearMap.set(year,{year,opening:row.opening,contributions:0,growth:0,fees:0,withdrawals:0,closing:0,incomeGross:0,incomeNet:0,withdrawalsNet:0,spending:0,shortfall:0,tax:0,accessible:0,locked:0,balances:dictionary(),potLedger:dictionary()});
+    if(!yearMap.has(year)) yearMap.set(year,{year,opening:row.opening,contributions:0,growth:0,fees:0,withdrawals:0,closing:0,incomeGross:0,incomeNet:0,withdrawalsNet:0,withdrawalTarget:0,scheduledWithdrawalsGross:0,recurringWithdrawalsGross:0,unmetWithdrawal:0,spending:0,shortfall:0,tax:0,accessible:0,locked:0,balances:dictionary(),potLedger:dictionary()});
     const annual=yearMap.get(year);
-    for(const key of ['contributions','growth','fees','incomeGross','incomeNet','withdrawalsNet','spending','shortfall','tax']) annual[key]+=row[key];
+    for(const key of ['contributions','growth','fees','incomeGross','incomeNet','withdrawalsNet','withdrawalTarget','scheduledWithdrawalsGross','recurringWithdrawalsGross','unmetWithdrawal','spending','shortfall','tax']) annual[key]+=row[key];
     annual.withdrawals+=row.withdrawalsGross;annual.closing=row.total;annual.accessible=row.accessible;annual.locked=row.locked;annual.balances=dictionary(Object.entries(row.balances));
     for(const [id,l] of Object.entries(row.potLedger)) {
       if(!Object.hasOwn(annual.potLedger,id)) annual.potLedger[id]={opening:l.opening,contributions:0,growth:0,fees:0,withdrawals:0,transfersIn:0,transfersOut:0,closing:0};
@@ -173,5 +194,8 @@ export function project(plan, {scenario='base'}={}) {
       annual.potLedger[id].closing=l.closing;
     }
   }
-  return {months,years:[...yearMap.values()],warnings:[...warnings],assumptions,taxComplete:false,taxVersion:TAX_VERSION,scenario};
+  const firstUnmet=months.find(row=>row.unmetWithdrawal>0.000001);
+  const firstUnmetWithdrawal=firstUnmet?{month:firstUnmet.month,amount:firstUnmet.unmetWithdrawal,locked:firstUnmet.locked,total:firstUnmet.total,accessible:firstUnmet.accessible}:null;
+  if(firstUnmetWithdrawal) warnings.add(`The recurring gross withdrawal target is first underfunded in ${firstUnmetWithdrawal.month}. Locked pension wealth may remain; this does not necessarily mean all money has run out.`);
+  return {firstUnmetWithdrawal,months,years:[...yearMap.values()],warnings:[...warnings],assumptions,taxComplete:false,taxVersion:TAX_VERSION,scenario};
 }

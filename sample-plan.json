@@ -1,5 +1,9 @@
 {
-  "version": 1,
+  "version": 2,
+  "drawdown": {
+    "annualAmount": 0,
+    "inflationLinked": true
+  },
   "name": "Illustrative retirement plan",
   "startMonth": "2026-11",
   "endAge": 95,

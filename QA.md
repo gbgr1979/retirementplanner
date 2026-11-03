@@ -39,7 +39,7 @@ The file chooser required native approval and completed without a bypass. Load r
 
 ## Release boundaries
 
-This is a locally built MVP prepared for initial source upload to `gbgr1979/retirementplanner`; it is not a published website. Financial model limitations are prominently shown in the app and README: gross-only scheduled withdrawals, no automatic drawdown or surplus carry-forward, incomplete/frozen tax estimate. This does not validate retirement sustainability or recommend a withdrawal strategy. Further specialist review is advisable before promoting it as a public financial planning tool.
+This is a locally built MVP prepared for initial source upload to `gbgr1979/retirementplanner`; it is not a published website. Financial model limitations are prominently shown in the app and README: gross withdrawal targets/events, no optimised drawdown or surplus carry-forward, incomplete/frozen tax estimate. This does not validate retirement sustainability or recommend a withdrawal strategy. Further specialist review is advisable before promoting it as a public financial planning tool.
 
 ## Guided setup update — 2 November 2026
 
@@ -52,3 +52,11 @@ Mobile responsive CSS was reviewed, but actual mobile/narrow-viewport rendering 
 Initial HTML hides the workspace, financial actions and projection skip link before JavaScript, preventing an example-dashboard flash. Screen-state tests cover first display, accepted wizard/load, cancelled/failed flows, repeated acceptance and reload initialisation. Load and wizard completion handlers are checked to reveal the workspace only after acceptance. The existing nine-file public payload and standalone publisher are unchanged.
 
 Final landing check: **66 tests**, syntax/build and nine-file payload verification passed. Independent actual desktop browser review confirmed calm initial landing; Cancel/Escape return to landing and focus; first completion with £12,345 reveals the matching planner; repeated New plan requires replacement consent; Cancel preserves £12,345 and a newer unsaved name edit. Successful file-load transition was checked in source/tests, not the browser because the file chooser requires separate approval. Actual mobile rendering remains untested.
+
+## Recurring withdrawal feature — 3 November 2026
+
+Annual gross target controls now drive real monthly pot reductions. Independent model review passed 11 exact black-box cases and 86,400 monthly invariants across 50 varied plans ×3 scenarios, deterministic type/owner/list-order checks and 50 exact roundtrips with input immutability. Covered actual event offsets (including failures and excess), transfers, partial/exact depletion, locked versus exhausted funds, owner tax/lump-sum allocation, partner inclusion, and inflation anchor. Strict v1 migration retains the old zero-recurring-withdrawal meaning.
+
+Pure control tests cover exact £1,000 adjustments, zero/cap bounds, decimal drift and outcome labels. All checks remain local; no deployment or financial guarantees are implied. No new public modules or publishing dependencies were added.
+
+Final recurring-withdrawal check: **91 tests**, syntax/build and exact nine-file static payload passed. Independent actual-browser QA confirmed the wizard’s disclosed £24k default, £1k repeated/keyboard adjustments, changed graph paths and earlier shortfall, zero/minus floor, invalid/cap handling, unchanged amount basis across money/scenario toggles, fixed-nominal mode, explicit horizon-not-guarantee status, pending editor-value preservation and clean landing. Mobile rendering and browser file-load acceptance remain untested; schema migration/roundtrips are tested programmatically. No PowerShell runtime is available, but exact public-file and publisher security contract tests pass.

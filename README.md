@@ -1,6 +1,6 @@
 # Retirement Path — UK retirement-planning MVP
 
-A dependency-free, browser-only static web app. Working name only; all initial numbers and dates of birth are fictitious examples, not Gareth's personal financial information. Source repository: https://github.com/gbgr1979/retirementplanner . No automatic deployment is configured; the optional Windows publisher below runs only when you launch it.
+A dependency-free, browser-only static web app. Working name only; the included example file uses fictitious numbers and dates of birth, not Gareth's personal financial information. Source repository: https://github.com/gbgr1979/retirementplanner . No automatic deployment is configured; the optional Windows publisher below runs only when you launch it.
 
 ## Run on Windows
 
@@ -47,7 +47,7 @@ This is an educational illustration, not financial advice, a regulated suitabili
 - Pension access honours the ordinary statutory increase from 55 to 57 in April 2028, with any higher entered age. Mid-month birthdays become accessible in the following month. Protected ages and special cases are unsupported.
 - Contributions enter at month start, growth then charges apply, events occur at month end. Contributions stop in retirement month even if entered end date is later. Net-relief pension payments receive only basic-rate relief (×1.25). External contribution funding is not deducted from spending.
 - Spending/income input amounts are in projection-start pounds; event amounts are fixed nominal future pounds. Deterministic returns do not model market volatility or sequence-of-return risk.
-- **No automatic drawdown.** A monthly deficit stays unfunded. Surplus income/withdrawal cash is not carried to later months or reinvested. Consequently annual cash may exceed annual spending while some months still have gaps. This is shown explicitly rather than hidden.
+- **Recurring gross withdrawals are controlled by the annual target above the graph.** They start at the primary person’s retirement month and are removed monthly from accessible pots in the disclosed order. A spending deficit beyond that selected target stays unfunded; spending is not deducted a second time. Surplus income/withdrawal cash is not carried to later months or reinvested. Consequently annual cash may exceed annual spending while some months still have gaps.
 - Transfers preserve household wealth; only accessible same-owner non-pension transfers are supported. They do not establish formal ISA-transfer status or enforce subscription rules. ISA/pension contribution threshold warnings are not comprehensive allowance/tax-charge calculations.
 - No Monte Carlo, optimiser, death/survivor modelling, IHT, means-tested benefits, guaranteed entitlement, protected pension rights, salary sacrifice, allowance taper or carry-forward engine.
 
@@ -55,7 +55,7 @@ This is an educational illustration, not financial advice, a regulated suitabili
 
 Financial data exists only in current JavaScript memory and files you explicitly download. There is **no localStorage/IndexedDB autosave**, cookie, tracking, analytics, external font, external script, ad or network API request. Reloading/closing loses edits unless you save. Downloaded JSON is **unencrypted**: protect it as personal financial information. On ordinary public hosting, the host still sees standard page requests; opening official-source links navigates to those services.
 
-Plan files use strict version 1 validation, bounded values/counts, valid calendar dates, known IDs and fields, a 1 MB UTF-8 limit, and unsafe prototype-key rejection. Invalid files leave the existing plan untouched. Future file versions are rejected explicitly, not silently guessed. All user strings are escaped before rendering. Exporting a file requests a browser download; users should confirm their browser actually saved it.
+Plan files use strict version 2 validation, bounded values/counts, valid calendar dates, known IDs and fields, a 1 MB UTF-8 limit, and unsafe prototype-key rejection. Invalid files leave the existing plan untouched. Valid version 1 files are strictly validated before migration to version 2, with recurring withdrawals set to £0 so previous plans are not silently changed. Unknown versions are rejected explicitly. All user strings are escaped before rendering. Exporting a file requests a browser download; users should confirm their browser actually saved it.
 
 ## Structure
 
@@ -137,3 +137,17 @@ Ages become approximate first-of-month dates; exact dates, Scottish tax region a
 The initial screen contains only a short introduction, **Start your retirement plan**, and a discreet **Load a saved plan** button. Example figures, editor controls, charts and technical notes remain hidden until a wizard is completed or a saved plan is successfully loaded. Cancelled setup, cancelled file selection/replacement and invalid files do not reveal or reset the workspace.
 
 Once a plan is open, **New plan** starts a separate draft. Cancelling it preserves the current plan and any unsaved editor fields; replacing it requires explicit confirmation. There is deliberately no destructive Home/reset navigation. Reloading a tab returns to the landing page; save your plan file first (unsaved changes trigger the usual browser warning). No new modules, dependencies or publishing steps were added for this simplification.
+
+## Annual withdrawal scenarios
+
+A prominent **Annual withdrawals from your pots** control above the graph changes the plan immediately. Plus/minus adjusts by exactly £1,000 per year (clamped between £0 and £12,000,000); direct entry is also supported. This is a gross, before-tax pot-withdrawal target, **not a calculation of guaranteed sustainable income** or a net lifestyle budget.
+
+- The target begins at the primary person’s retirement month. It is a household target when the partner is included.
+- By default it is expressed in projection-start pounds and rises with inflation from the projection start date. The advanced checkbox can select fixed future nominal pounds instead. The chart’s today/future-pound display toggle never changes the stored amount or its basis.
+- Each month, actual successful scheduled withdrawals count towards one twelfth of that month’s indexed target. Rejected withdrawals and transfers do not count. Scheduled amounts above the target still execute in full, with no credit against later months.
+- Remaining target is drawn partially, if necessary, from accessible cash savings → cash ISA → stocks & shares ISA → SIPP/workplace DC pensions. Within each group, primary-owner pots come first, then partner pots, retaining listed order. No inaccessible pension or excluded partner pot is used; no balance becomes negative. This order is deterministic, not tax-optimised.
+- State/DB income remains separate from the pot target. Actual pension withdrawals enter the existing per-owner tax and lump-sum allowance accounting. Spendable cash may therefore be lower than gross withdrawals.
+- The first unmet target is reported distinctly from spending shortfall. Locked pensions may remain, so an access shortfall does not mean all wealth has disappeared. Funding through the model horizon is not a promise of lifelong sustainability.
+- New wizard plans begin with an explicitly disclosed gross annual target equal to the monthly spending input ×12, editable immediately afterwards. Imported v1 plans start at zero and prompt the user to choose a target. v2 files retain the chosen target and inflation basis.
+
+The saved v2 field is `drawdown: { annualAmount, inflationLinked }`; withdrawal start follows primary retirement dynamically so changing that date cannot leave a stale separate start setting.

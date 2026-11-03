@@ -53,3 +53,8 @@ test('fresh pension uses statutory access age rather than inventing a 57 minimum
 });
 
 test('excluded partner placeholder cannot be mistaken for entered details',()=>{const draft=createWizardDraft('2026-11');draft.you.age=47;const plan=buildWizardPlan(draft);assert.equal(plan.people.find(p=>p.id==='partner').name,'Partner (details not entered)');assert.equal(plan.includePartner,false);});
+
+test('wizard v2 uses annual gross draw target from monthly spending, without assumed pension income',()=>{
+ const d=ready();d.monthlySpending=2400;const p=buildWizardPlan(d);assert.equal(p.version,2);assert.deepEqual(p.drawdown,{annualAmount:28800,inflationLinked:true});assert.deepEqual(p.incomes,[]);assert.deepEqual(p.events,[]);
+ d.monthlySpending=0;assert.equal(buildWizardPlan(d).drawdown.annualAmount,0);d.monthlySpending=1000000;assert.equal(buildWizardPlan(d).drawdown.annualAmount,12000000);
+});
