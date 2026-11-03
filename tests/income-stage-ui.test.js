@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createExamplePlan, validatePlan} from '../src/plan.js';
-import {createIncomeStageDraft, buildIncomeStagePlan, addIncomeStageDraft, mountIncomeStages} from '../src/income-stage-ui.js';
+import {createExamplePlan, validatePlan, parsePlan, serializePlan} from '../src/plan.js';
+import {createIncomeStageDraft, buildIncomeStagePlan, addIncomeStageDraft, mountIncomeStages, stepIncomeAmount} from '../src/income-stage-ui.js';
 
 const fresh = () => createExamplePlan();
 test('draft round trip preserves all values, modes, State Pension and precision', () => {
@@ -61,62 +61,89 @@ test('first new age is after later retirement and removal can restore single bas
   draft.stages=[]; assert.deepEqual(buildIncomeStagePlan(plan,draft).drawdown.stages,[]);
 });
 
-// Minimal DOM fixture for lifecycle and delegated-event tests. Native close is queued.
-function fixture(getPlan = fresh, onComplete = () => {}) {
+// Small delegated-event DOM fixture: identity lets us verify typing does not rebuild inputs.
+function fixture(plan = fresh()) {
+  let live = structuredClone(plan), completed = 0;
   class Element {
-    constructor(id) {this.id=id; this.handlers={}; this.value=''; this.dataset={}; this.isConnected=true;}
-    addEventListener(type,fn) {(this.handlers[type]??=new Set()).add(fn);}
-    removeEventListener(type,fn) {this.handlers[type]?.delete(fn);}
-    async emit(type,event={}) {for (const fn of this.handlers[type]||[]) await fn({target:this,preventDefault(){},...event});}
-    setAttribute(key,value) {this[key]=value;}
-    removeAttribute(key) {delete this[key];}
-    focus() {root.activeElement=this;}
-    closest(selector) {return selector===`#${this.id}` || (selector==='[data-remove-stage]' && this.dataset.removeStage!==undefined) ? this : null;}
+    constructor(id) { this.id=id; this.handlers={}; this.value=''; this.dataset={}; }
+    addEventListener(type,fn) { (this.handlers[type]??=new Set()).add(fn); }
+    removeEventListener(type,fn) { this.handlers[type]?.delete(fn); }
+    emit(type,event={}) { for(const fn of this.handlers[type]||[]) fn({target:this,...event}); }
+    setAttribute(key,value) { this[key]=value; }
+    removeAttribute(key) { delete this[key]; }
+    focus() { root.activeElement=this; }
+    closest(selector) { return selector===`#${this.id}` || selector==='[data-step]'&&this.dataset.step!==undefined || selector==='[data-remove-stage]'&&this.dataset.removeStage!==undefined ? this : null; }
   }
-  const root={activeElement:null,querySelector(selector){return nodes.get(selector.slice(1))||null;}};
-  const nodes=new Map(['edit-income-stages','income-stages-dialog','income-stages-content'].map(id=>[id,new Element(id)]));
-  const trigger=nodes.get('edit-income-stages'), dialog=nodes.get('income-stages-dialog'), content=nodes.get('income-stages-content');
-  content.querySelector=selector=>nodes.get(selector.slice(1))||null;
-  Object.defineProperty(content,'innerHTML',{set(html){this.html=html; for (const match of html.matchAll(/<[^>]*\bid="([^"]+)"[^>]*>/g)) {const el=new Element(match[1]); el.value=match[0].match(/\bvalue="([^"]*)"/)?.[1]??''; nodes.set(el.id,el);}}});
-  dialog.showModal=()=>{dialog.open=true;}; dialog.close=()=>{dialog.open=false;};
-  let error=null; const dispose=mountIncomeStages({root,getPlan,onComplete,onError:e=>{error=e;}});
-  trigger.focus();
-  return {root,nodes,trigger,dialog,content,dispose,get error(){return error;},input:(id,value)=>{nodes.get(id).value=value;},submit:()=>content.emit('submit',{target:nodes.get('is-form')}),click:id=>content.emit('click',{target:nodes.get(id)})};
+  const nodes=new Map(), content=new Element('income-ranges'); nodes.set(content.id,content);
+  const root={activeElement:null,querySelector:selector=>nodes.get(selector.slice(1))||null};
+  content.querySelector=root.querySelector;
+  Object.defineProperty(content,'innerHTML',{set(html){this.html=html;for(const match of html.matchAll(/<[^>]*\bid="([^"]+)"[^>]*>/g)){const el=new Element(match[1]);el.value=match[0].match(/\bvalue="([^"]*)"/)?.[1]??'';for(const [,key,value] of match[0].matchAll(/data-(step|stage)="([^"]+)"/g))el.dataset[key]=value;nodes.set(el.id,el);}}});
+  const controller=mountIncomeStages({root,getPlan:()=>live,onComplete:next=>{live=next;completed++;controller.refresh(live);}});
+  return {root,nodes,content,controller,get live(){return live;},get completed(){return completed;},input(id,value){nodes.get(id).value=value;content.emit('input',{target:nodes.get(id)});},click(id){content.emit('click',{target:nodes.get(id)});},remove(i){const target={dataset:{removeStage:String(i)},closest:s=>s==='[data-remove-stage]'?target:null};content.emit('click',{target});}};
 }
-test('Cancel and Escape discard changes and return focus, with rapid reopening safe', async () => {
-  const plan=fresh(), before=structuredClone(plan); let applied=0; const f=fixture(()=>plan,()=>applied++);
-  await f.trigger.emit('click'); f.input('is-baseline','99'); await f.click('is-add'); assert.match(f.content.html,/is-age-0/);
-  await f.click('is-cancel'); await f.dialog.emit('close'); assert.equal(f.root.activeElement,f.trigger); assert.deepEqual(plan,before); assert.equal(applied,0);
-  await f.trigger.emit('click'); assert.equal(f.nodes.get('is-baseline').value,createIncomeStageDraft(plan).annualAmount);
-  await f.dialog.emit('cancel'); await f.trigger.emit('click'); await f.dialog.emit('close');
-  assert.equal(f.dialog.open,true); await f.submit(); assert.equal(applied,1); f.dispose();
+test('flat plan is immediately visible; adding copies current amount and applies live',()=>{
+  const f=fixture();assert.match(f.content.html,/Income by age range/);assert.equal(f.nodes.get('is-baseline-range').textContent,'From retirement onwards');
+  f.input('is-baseline','35,000');f.click('is-add');assert.equal(f.live.drawdown.stages[0].annualAmount,35000);assert.equal(f.nodes.get('is-age-0').value,'70');assert.equal(f.root.activeElement.id,'is-age-0');
+  f.input('is-amount-0','25,000');assert.equal(f.live.drawdown.stages[0].annualAmount,25000);assert.equal(f.live.drawdown.annualAmount,35000);
 });
-test('invalid age focuses inline field; valid apply sends full pending snapshot', async () => {
-  const plan=fresh(); plan.pots[0].balance=12345; let applied; const f=fixture(()=>plan,value=>{applied=value;});
-  await f.trigger.emit('click'); await f.click('is-add'); f.input('is-age-0',''); await f.submit();
-  assert.equal(applied,undefined); assert.equal(f.root.activeElement.id,'is-age-0'); assert.equal(f.nodes.get('is-age-0')['aria-invalid'],'true');
-  f.input('is-age-0','70'); f.input('is-amount-0','25,000'); await f.submit(); assert.equal(applied.pots[0].balance,12345); assert.equal(applied.drawdown.stages[0].annualAmount,25000); assert.equal(f.dialog.open,false);
+test('typing preserves field node, raw partial value and focus during refresh',()=>{
+  const f=fixture(),input=f.nodes.get('is-baseline');input.focus();f.input(input.id,'35,000.');f.controller.refresh(f.live);
+  assert.equal(f.nodes.get(input.id),input);assert.equal(input.value,'35,000.');assert.equal(f.root.activeElement,input);
+  const before=structuredClone(f.live);f.input(input.id,'');f.controller.refresh(f.live);assert.equal(input.value,'');assert.deepEqual(f.live,before);assert.throws(()=>f.controller.readPlan(),/annual amount/);assert.equal(f.root.activeElement,input);
 });
-test('invalid pending plan blocks opening; failed apply retains editable draft', async () => {
-  const bad=fresh(); bad.endAge=200; const f=fixture(()=>bad); await f.trigger.emit('click'); assert.ok(f.error); assert.notEqual(f.dialog.open,true);
-  const g=fixture(fresh,()=>{throw new Error('Save failed');}); await g.trigger.emit('click'); g.input('is-baseline','35000'); await g.submit(); assert.equal(g.dialog.open,true); assert.equal(g.nodes.get('is-errors').textContent,'Save failed'); assert.equal(g.nodes.get('is-apply').disabled,false);
+test('invalid ranges block entire candidate and external controls; correction commits all edits',()=>{
+  const f=fixture();f.click('is-add');f.input('is-age-0','');const before=structuredClone(f.live);
+  f.input('is-baseline','40,000');assert.deepEqual(f.live,before);assert.throws(()=>f.controller.readPlan(),/whole age/);assert.equal(f.root.activeElement.id,'is-age-0');
+  f.click('is-plus--1');assert.equal(f.nodes.get('is-baseline').value,'40,000');assert.deepEqual(f.live,before);
+  f.input('is-age-0','72');assert.equal(f.live.drawdown.annualAmount,40000);assert.equal(f.live.drawdown.stages[0].fromAge,72);
 });
-test('old asynchronous apply cannot close a newly reopened dialog', async () => {
-  let resolve; const f=fixture(fresh,()=>new Promise(done=>{resolve=done;})); await f.trigger.emit('click'); const pending=f.submit();
-  await f.click('is-cancel'); await f.trigger.emit('click'); resolve(); await pending; assert.equal(f.dialog.open,true);
+test('add and remove retain other invalid input without applying partial plan',()=>{
+  const f=fixture();f.input('is-baseline','');const before=structuredClone(f.live);f.click('is-add');assert.equal(f.nodes.get('is-baseline').value,'');assert.equal(f.nodes.get('is-amount-0').value,'');assert.deepEqual(f.live,before);
+  f.remove(0);assert.equal(f.nodes.get('is-baseline').value,'');assert.deepEqual(f.live,before);f.input('is-baseline','22,000');assert.equal(f.live.drawdown.annualAmount,22000);
 });
-test('explicit Remove affects only draft until Apply and adds do not reset typed baseline', async () => {
-  const plan=fresh(); plan.drawdown.stages=[{fromAge:70,annualAmount:25000}]; let result; const f=fixture(()=>plan,value=>{result=value;});
-  await f.trigger.emit('click'); f.input('is-baseline','35,000');
-  const remove={dataset:{removeStage:'0'},closest:selector=>selector==='[data-remove-stage]'?remove:null};
-  await f.content.emit('click',{target:remove}); assert.equal(plan.drawdown.stages.length,1);
-  assert.equal(f.nodes.get('is-baseline').value,'35,000'); await f.submit(); assert.deepEqual(result.drawdown.stages,[]); assert.equal(result.drawdown.annualAmount,35000);
+test('every row has independent £1000 buttons and lower bound',()=>{
+  const f=fixture();f.input('is-baseline','35,000');f.click('is-add');f.input('is-amount-0','25,000');f.click('is-plus-0');assert.equal(f.live.drawdown.stages[0].annualAmount,26000);assert.equal(f.live.drawdown.annualAmount,35000);
+  f.click('is-minus--1');assert.equal(f.live.drawdown.annualAmount,34000);f.input('is-amount-0','500');f.click('is-minus-0');assert.equal(f.live.drawdown.stages[0].annualAmount,0);assert.equal(f.nodes.get('is-minus-0').disabled,true);
 });
-test('dialog explains inflation, fixed nominal mode, primary age and exact effective month', async () => {
-  const plan=fresh(); plan.people.find(p=>p.id==='you').dob='1970-06-15'; plan.drawdown.stages=[{fromAge:70,annualAmount:25000}];
-  const f=fixture(()=>plan); await f.trigger.emit('click'); assert.match(f.content.html,/projection-start/); assert.match(f.content.html,/Pot withdrawals before tax/); assert.match(f.nodes.get('is-range-0').textContent,/2040-07/);
-  await f.click('is-cancel'); plan.drawdown.inflationLinked=false; plan.drawdown.mode='totalIncome'; await f.trigger.emit('click'); assert.match(f.content.html,/fixed nominal/); assert.match(f.content.html,/Combined income target before tax/); assert.match(f.content.html,/primary person/);
+test('refresh retains saved pre-retirement stages and explains their effective dates',()=>{
+  const p=fresh();p.people[0].dob='1970-06-15';p.people[0].retirementMonth='2045-08';p.drawdown.stages=[{fromAge:70,annualAmount:25000}];const f=fixture(p);
+  assert.match(f.nodes.get('is-range-0').textContent,/2040-07/);assert.match(f.nodes.get('is-range-0').textContent,/Already in force/);f.controller.refresh(p);assert.deepEqual(f.live.drawdown.stages,p.drawdown.stages);
+  const next=fresh();f.controller.reset(next);assert.equal(f.nodes.get('is-baseline-range').textContent,'From retirement onwards');assert.deepEqual(f.controller.readPlan(next).drawdown,next.drawdown);
 });
-test('visible top Close button discards draft and restores opener focus', async () => {
-  let applied=0; const f=fixture(fresh,()=>applied++); await f.trigger.emit('click'); f.input('is-baseline','99'); await f.click('is-close'); await f.dialog.emit('close'); assert.equal(f.dialog.open,false); assert.equal(applied,0); assert.equal(f.root.activeElement,f.trigger);
+test('pending detailed edits are included but never partially applied when invalid',()=>{
+  const f=fixture();f.click('is-add');f.input('is-age-0','70.5');const base=structuredClone(f.live);base.pots[0].balance=12345;assert.throws(()=>f.controller.readPlan(base));assert.notEqual(f.live.pots[0].balance,12345);
+  f.input('is-age-0','71');assert.equal(f.controller.readPlan(base).pots[0].balance,12345);
+});
+
+test('adding after age 110 reports an inline error without destroying the draft',()=>{
+  const p=fresh();p.drawdown.stages=[{fromAge:110,annualAmount:12345}];const f=fixture(p);f.click('is-add');assert.match(f.nodes.get('is-errors').textContent,/already 110/);assert.equal(f.root.activeElement.id,'is-add');assert.deepEqual(f.live,p);
+});
+
+test('decimal step helper preserves arbitrary entered precision without fixed rounding',()=>{
+  for (const text of ['0.1','500.1','123.123456789','0.123456789123456789','000.1000','.1','+500.10','500.']) {
+    const plus=stepIncomeAmount(text,1), restored=stepIncomeAmount(plus,-1);
+    assert.equal(restored.replaceAll(',',''),text.replace(/^\+/,'').replace(/^000(?=\.)/,'0').replace(/^\./,'0.'));
+  }
+  assert.equal(stepIncomeAmount('500.1',-1),'0.0');
+  assert.equal(stepIncomeAmount('11,999,999.123456789',1),'12,000,000.000000000');
+  assert.equal(stepIncomeAmount('12,000,000',1),'12,000,000');
+  assert.throws(()=>stepIncomeAmount('500,1',1));
+});
+test('baseline and stage buttons round trip fractions exactly through repeated click activations and saved JSON',()=>{
+  for (const text of ['0.1','500.1','123.123456789']) for (const stage of [-1,0]) {
+    const f=fixture();if(stage===0)f.click('is-add');const id=stage<0?'is-baseline':`is-amount-${stage}`;
+    f.input(id,text);
+    // Native keyboard activation dispatches the same click event as pointer use.
+    for(let n=0;n<20;n++) f.click(`is-plus-${stage}`);
+    for(let n=0;n<20;n++) f.click(`is-minus-${stage}`);
+    assert.equal(f.nodes.get(id).value,text);
+    const restored=parsePlan(serializePlan(f.live));
+    assert.equal(stage<0?restored.drawdown.annualAmount:restored.drawdown.stages[stage].annualAmount,Number(text));
+    assert.equal(stage<0?f.live.drawdown.annualAmount:f.live.drawdown.stages[stage].annualAmount,Number(text));
+  }
+});
+
+test('remove button accessible name follows the edited age, including invalid drafts',()=>{
+  const f=fixture();f.click('is-add');f.input('is-age-0','80');assert.equal(f.nodes.get('is-remove-0')['aria-label'],'Remove range starting at age 80');
+  f.input('is-age-0','');assert.equal(f.nodes.get('is-remove-0')['aria-label'],'Remove range starting at age not yet valid');
 });
