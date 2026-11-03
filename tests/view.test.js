@@ -225,7 +225,7 @@ test('retirement marker shows actual age at the start of its month, including bi
 });
 
 test('income-funded target is not misreported as retirement outside the projection',()=>{
- const p=createExamplePlan();p.drawdown={mode:'totalIncome',annualAmount:12000,inflationLinked:false};
+ const p=createExamplePlan();p.drawdown={stages:[],mode:'totalIncome',annualAmount:12000,inflationLinked:false};
  const r={months:[{month:'2040-01',withdrawalTarget:0,incomeTarget:1000}],firstUnmetWithdrawal:null};
  assert.match(withdrawalOutcome(p,r).text,/funded through/);assert.match(withdrawalCardSummary(p,r),/Funded through/);
 });
@@ -282,4 +282,74 @@ test('growth comparison changes model totals and chart, survives saving, and res
  assert.notEqual(chart(result),chart(baseline));
  const loaded=parsePlan(serializePlan(shifted));assert.deepEqual(loaded,shifted);assert.deepEqual(project(loaded),result);
  assert.deepEqual(project(shiftGroupGrowth(shifted,'pension',-1)),baseline);
+});
+
+import {projectionEventMarkers} from '../src/view.js';
+function eventFixture() {
+ const plan=createExamplePlan();plan.includePartner=true;
+ plan.incomes=[{...plan.incomes[0],owner:'you',startMonth:'2046-03',endMonth:'2047-12'}, {...plan.incomes[0],id:'partnerState',owner:'partner',startMonth:'2046-11',endMonth:'2047-12'}];
+ const result={years:[{year:2045},{year:2046},{year:2047}],months:[{month:'2045-11',opening:100,total:100,incomeGross:0},{month:'2046-03',opening:100,total:50,incomeGross:900},{month:'2046-11',opening:50,total:40,incomeGross:1800},{month:'2047-05',opening:40,total:30,incomeGross:1800}]};
+ return {plan,result};
+}
+test('State Pension markers use actual included positive income and distinguish owners sharing a year',()=>{
+ const {plan,result}=eventFixture(),before=structuredClone({plan,result});
+ const {markers,notes}=projectionEventMarkers(plan,result);
+ assert.equal(markers.length,2);assert.deepEqual(markers.map(m=>m.index),[1,1]);
+ assert.deepEqual(markers.map(m=>m.owner),['you','partner']);assert.match(markers[0].label,/March 2046/);assert.match(markers[1].label,/November 2046/);
+ assert.ok(notes.every(note=>note.includes('Income, not pot wealth')&&note.includes('not an exact monthly balance')));
+ assert.deepEqual({plan,result},before);
+ plan.includePartner=false;assert.equal(projectionEventMarkers(plan,result).markers.length,1);
+ plan.incomes[0].monthlyAmount=0;assert.equal(projectionEventMarkers(plan,result).markers.length,0);
+});
+test('State Pension already active is a note, while zero, excluded and out-of-horizon streams have no marker',()=>{
+ const {plan,result}=eventFixture();plan.incomes=plan.incomes.slice(0,1);
+ plan.incomes[0].startMonth='2044-01';result.months[0].incomeGross=900;
+ let events=projectionEventMarkers(plan,result);assert.equal(events.markers.length,0);assert.match(events.notes[0],/already in payment/);
+ for(const dates of [['2044-01','2045-10'],['2047-06','2047-12'],['2048-01','2049-01']]){
+  [plan.incomes[0].startMonth,plan.incomes[0].endMonth]=dates;assert.deepEqual(projectionEventMarkers(plan,result),{markers:[],notes:[]});
+ }
+ plan.incomes[0].startMonth='2046-03';plan.incomes[0].endMonth='2047-12';result.months.forEach(row=>row.incomeGross=0);
+ assert.deepEqual(projectionEventMarkers(plan,result),{markers:[],notes:[]});
+ plan.incomes=[];assert.deepEqual(projectionEventMarkers(plan,result),{markers:[],notes:[]});
+});
+test('depletion means earliest exact total zero after wealth, including first opening and partner pots',()=>{
+ const {plan,result}=eventFixture();plan.incomes=[];plan.people.find(p=>p.id==='you').dob='1957-11-15';
+ result.months[2].total=0;result.months[3].opening=0;result.months[3].total=0;
+ let events=projectionEventMarkers(plan,result),event=events.markers[0];
+ assert.equal(event.kind,'depletion');assert.equal(event.month,'2046-11');assert.equal(event.age,88);assert.equal(event.chartLabel,'Pot ran out – age 88');assert.match(event.label,/partner’s pots/);
+ result.months[3].total=10;event=projectionEventMarkers(plan,result).markers[0];assert.equal(event.chartLabel,'Pot first reaches £0 – age 88');assert.equal(event.recovers,true);
+ assert.match(event.label,/becomes positive again/);
+ result.months=result.months.slice(0,1);result.months[0].total=0;assert.equal(projectionEventMarkers(plan,result).markers[0].month,'2045-11');
+ result.months[0].opening=0;assert.deepEqual(projectionEventMarkers(plan,result),{markers:[],notes:[]});
+});
+test('shortfalls, locked funds and tiny positive balances do not become depletion annotations',()=>{
+ const {plan,result}=eventFixture();plan.incomes=[];
+ for(const balance of [100,0.01,0.000000001,Number.MIN_VALUE]){
+  result.months.forEach(row=>{row.total=balance;row.accessible=0;row.locked=balance;row.unmetWithdrawal=1000;});
+  result.firstUnmetWithdrawal={month:result.months[0].month,total:balance,locked:balance};
+  assert.deepEqual(projectionEventMarkers(plan,result),{markers:[],notes:[]});
+ }
+ assert.deepEqual(projectionEventMarkers(plan,{years:[],months:[]}),{markers:[],notes:[]});
+});
+test('event overlays preserve wealth paths and scale, escape text and avoid colliding labels',()=>{
+ const {plan,result}=eventFixture();result.months.at(-1).total=0;
+ const events=projectionEventMarkers(plan,result),series=[{colour:'#123456',values:[100,40,0]}],ret=retirementMarker('2046-03',result.years,result.months,plan.people[0].dob);
+ const baseline=svgChart(result.years,series,true,ret),svg=svgChart(result.years,series,true,ret,events.markers);
+ assert.deepEqual(svg.match(/<path[^>]*>/g),baseline.match(/<path[^>]*>/g));assert.deepEqual(svg.match(/<text[^>]*>£[^<]*<\/text>/g),baseline.match(/<text[^>]*>£[^<]*<\/text>/g));
+ assert.equal((svg.match(/class="state-marker"/g)||[]).length,2);assert.equal((svg.match(/class="depletion-marker"/g)||[]).length,1);
+ const rows=[...svg.matchAll(/class="state-marker-label"[^>]* y="(\d+)"/g)].map(match=>Number(match[1]));assert.equal(rows.length,2);assert.notEqual(rows[0],rows[1]);assert.ok(rows.every(y=>y>32));
+ assert.match(svg,/aria-label="Your State Pension starts: March 2046/);
+ const escaped=svgChart(result.years,series,true,ret,[{index:1,kind:'state',label:'<script>',chartLabel:'<script>'}]);assert.doesNotMatch(escaped,/<script>/);assert.match(escaped,/&lt;script&gt;/);
+});
+test('actual projected State Pension starts are annotated only when received inside the horizon',()=>{
+ const plan=createExamplePlan();let result=project(plan);
+ let event=projectionEventMarkers(plan,result).markers.find(marker=>marker.kind==='state');assert.equal(event.month,plan.incomes[0].startMonth);assert.ok(result.months.find(row=>row.month===event.month).incomeGross>0);
+ plan.incomes[0].startMonth='2100-01';plan.incomes[0].endMonth='2101-01';assert.ok(!projectionEventMarkers(plan,project(plan)).markers.some(marker=>marker.kind==='state'));
+});
+
+test('positive later stages work when baseline is zero and zero final stages do not shorten funded horizon',()=>{
+ const p=createExamplePlan();p.people[0].retirementMonth=p.startMonth;p.drawdown.annualAmount=0;p.drawdown.stages=[{fromAge:50,annualAmount:120},{fromAge:70,annualAmount:0}];p.incomes=[];p.events=[];
+ p.pots.forEach(pot=>{pot.balance=1000000;pot.monthlyContribution=0;pot.employerContribution=0;});
+ const r=project(p);assert.match(withdrawalOutcome(p,r).text,/funded through/);assert.match(withdrawalCardSummary(p,r),/2074/);
+ p.drawdown.stages=[{fromAge:110,annualAmount:120}];const outside=project(p);assert.match(withdrawalCardSummary(p,outside),/No positive income target/);
 });

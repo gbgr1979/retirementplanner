@@ -24,7 +24,7 @@ test('currency presentation is shared across editor wizard and annual control wi
  const {staticFiles}=await import('../scripts/static-files.mjs');assert.ok(staticFiles.includes('src/money-input.js'));
 });
 
-test('file loading does not infer ambiguous retirement date links',async()=>{const app=await readFile('src/app.js','utf8');assert.match(app,/plan=loaded;retirementLinks=\{potIds:\[\],spending:false\}/);});
+test('file loading does not infer ambiguous retirement date links',async()=>{const app=await readFile('src/app.js','utf8');assert.match(app,/plan=loaded;selectedStage=-1;retirementLinks=\{potIds:\[\],spending:false\}/);});
 
 test('retirement controls sit inside annual withdrawals, not the wealth chart',async()=>{
  const html=await readFile('index.html','utf8'),withdrawal=html.slice(html.indexOf('<article class="withdrawal-card"'),html.indexOf('</article>',html.indexOf('<article class="withdrawal-card"')));
@@ -47,4 +47,12 @@ test('growth row has three matched steppers and explicit base-rate semantics',as
  const html=await readFile('index.html','utf8'),app=await readFile('src/app.js','utf8');
  for(const category of ['savings','isa','pension'])for(const suffix of ['minus','plus','value','hint'])assert.ok(html.includes(`id="growth-${category}-${suffix}"`));
  assert.match(html,/mixed rates move together/);assert.match(html,/Base annual rates before fees/);assert.match(html,/cash and stocks &amp; shares ISAs/);assert.match(app,/shiftGroupGrowth\(candidate,category,direction\)/);assert.match(app,/renderGrowthControls\(\)/);
+});
+
+test('income stages and pension annotations are shipped while obsolete scenario UI is removed',async()=>{
+ const html=await readFile('index.html','utf8'),app=await readFile('src/app.js','utf8');
+ for(const id of ['edit-income-stages','income-stage-select','income-stages-dialog','projection-event-notes'])assert.ok(html.includes(`id="${id}"`));
+ assert.doesNotMatch(html,/id="scenario"|id="scenario-note"/);assert.doesNotMatch(app,/\$\('scenario'\)/);assert.match(app,/project\(plan,\{scenario:'base'\}\)/);
+ assert.match(app,/setSelectedAmount\(candidate/);assert.match(app,/pensionEvents.markers/);
+ const {staticFiles}=await import('../scripts/static-files.mjs');for(const file of ['src/income-stages.js','src/income-stage-ui.js'])assert.ok(staticFiles.includes(file));
 });

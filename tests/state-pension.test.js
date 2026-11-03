@@ -47,7 +47,7 @@ test('target mode is explicit and preserves annual amount and inflation choice',
   const plan = fresh(); plan.drawdown.annualAmount = 40000; plan.drawdown.inflationLinked = false;
   const draft = enabled(plan); assert.equal(buildStatePensionPlan(plan, draft).drawdown.mode, 'pots');
   draft.useTowardTarget = true; const result = buildStatePensionPlan(plan, draft);
-  assert.deepEqual(result.drawdown, {mode:'totalIncome', annualAmount:40000, inflationLinked:false});
+  assert.deepEqual(result.drawdown, {stages:[],mode:'totalIncome', annualAmount:40000, inflationLinked:false});
   assert.equal(createStatePensionDraft(result).useTowardTarget, true);
 });
 test('pending snapshot and draft stay isolated through edits, cancellation and build', () => {

@@ -1,9 +1,10 @@
 {
-  "version": 3,
+  "version": 4,
   "drawdown": {
     "mode": "pots",
     "annualAmount": 0,
-    "inflationLinked": true
+    "inflationLinked": true,
+    "stages": []
   },
   "name": "Illustrative retirement plan",
   "startMonth": "2026-11",
@@ -96,7 +97,7 @@
   "incomes": [
     {
       "id": "stateExample",
-      "name": "State Pension — illustrative, replace with your forecast",
+      "name": "State Pension \u2014 illustrative, replace with your forecast",
       "owner": "you",
       "type": "state",
       "monthlyAmount": 900,

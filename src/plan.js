@@ -1,5 +1,5 @@
 /** Versioned, local-only plan interchange. No persistence occurs in this module. */
-export const PLAN_VERSION = 3;
+export const PLAN_VERSION = 4;
 export const MAX_PLAN_BYTES = 1024 * 1024;
 const unsafeKeys = new Set(['__proto__', 'prototype', 'constructor']);
 const pensionTypes = new Set(['sipp', 'workplace']);
@@ -49,9 +49,19 @@ function validateVersion(plan, expectedVersion) {
   if (!object(plan, ['version','name','startMonth','endAge','includePartner','inflation','scenarioSpread','monthlySpending','spendingStart','people','pots','incomes','events', ...(expectedVersion >= 2 ? ['drawdown'] : [])], 'plan')) return {valid: false, errors};
   if (plan.version !== expectedVersion) fail(`Unsupported plan version. This app supports version ${PLAN_VERSION} only.`);
   string(plan.name, 'name'); month(plan.startMonth, 'startMonth'); month(plan.spendingStart, 'spendingStart');
-  if (expectedVersion >= 2 && object(plan.drawdown, ['annualAmount','inflationLinked', ...(expectedVersion >= 3 ? ['mode'] : [])], 'drawdown')) {
+  if (expectedVersion >= 2 && object(plan.drawdown, ['annualAmount','inflationLinked', ...(expectedVersion >= 3 ? ['mode'] : []), ...(expectedVersion >= 4 ? ['stages'] : [])], 'drawdown')) {
     if (expectedVersion >= 3) oneOf(plan.drawdown.mode, ['pots','totalIncome'], 'drawdown.mode');
     number(plan.drawdown.annualAmount, 'drawdown.annualAmount', 0, 12000000);
+    if (expectedVersion >= 4) {
+      const stages = array(plan.drawdown.stages, 'drawdown.stages', 10);
+      stages.forEach((stage, i) => {
+        const path = `drawdown.stages[${i}]`;
+        if (!object(stage, ['fromAge','annualAmount'], path)) return;
+        number(stage.fromAge, `${path}.fromAge`, 18, 110, true);
+        number(stage.annualAmount, `${path}.annualAmount`, 0, 12000000);
+        if (i > 0 && stage.fromAge <= stages[i-1]?.fromAge) fail('drawdown.stages ages must be strictly increasing and unique.');
+      });
+    }
     if (typeof plan.drawdown.inflationLinked !== 'boolean') fail('drawdown.inflationLinked must be true or false.');
   }
   number(plan.endAge, 'endAge', 18, 110, true); number(plan.inflation, 'inflation', -10, 20); number(plan.scenarioSpread, 'scenarioSpread', 0, 10); number(plan.monthlySpending, 'monthlySpending', 0, 1000000);
@@ -113,10 +123,10 @@ export function parsePlan(text) {
   if (new TextEncoder().encode(text).byteLength > MAX_PLAN_BYTES) throw new Error('Plan file exceeds the 1 MB limit.');
   let plan;
   try { plan = JSON.parse(text); } catch { throw new Error('This is not a valid JSON plan file.'); }
-  if (plan?.version === 1 || plan?.version === 2) {
+  if (plan?.version === 1 || plan?.version === 2 || plan?.version === 3) {
     const legacy = validateVersion(plan, plan.version);
     if (!legacy.valid) throw new Error(legacy.errors.join('\n'));
-    plan = {...plan, version: PLAN_VERSION, drawdown: {mode: 'pots', ...(plan.version === 1 ? {annualAmount: 0, inflationLinked: true} : plan.drawdown)}};
+    plan = {...plan, version: PLAN_VERSION, drawdown: {mode: 'pots', ...(plan.version === 1 ? {annualAmount: 0, inflationLinked: true} : plan.drawdown), stages: []}};
   }
   const result = validatePlan(plan);
   if (!result.valid) throw new Error(result.errors.join('\n'));
@@ -131,7 +141,7 @@ export function serializePlan(plan) {
 }
 export function createExamplePlan() {
   return {
-    version: PLAN_VERSION, drawdown: {mode: 'pots', annualAmount: 0, inflationLinked: true}, name: 'Illustrative retirement plan', startMonth: '2026-11', endAge: 95, includePartner: false,
+    version: PLAN_VERSION, drawdown: {mode: 'pots', annualAmount: 0, inflationLinked: true, stages: []}, name: 'Illustrative retirement plan', startMonth: '2026-11', endAge: 95, includePartner: false,
     inflation: 2.5, scenarioSpread: 2, monthlySpending: 2500, spendingStart: '2044-11',
     people: [
       {id:'you',name:'You (example)',dob:'1979-11-01',retirementMonth:'2044-11',region:'rUK',taxFreeUsed:0},

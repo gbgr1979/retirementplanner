@@ -6,7 +6,7 @@ if ([string]::IsNullOrWhiteSpace($SiteRoot)) { $SiteRoot = Split-Path -Parent $P
 $root = (Resolve-Path -LiteralPath $SiteRoot).Path
 # Exact public payload. Never recursively copy src or personal plan files.
 $files = @('index.html', 'styles.css', 'staticwebapp.config.json',
-    'src/app.js', 'src/model.js', 'src/plan.js', 'src/view.js', 'src/wizard-plan.js', 'src/wizard-ui.js', 'src/money-input.js', 'src/state-pension.js', 'src/state-pension-defaults.js')
+    'src/app.js', 'src/model.js', 'src/plan.js', 'src/view.js', 'src/wizard-plan.js', 'src/wizard-ui.js', 'src/money-input.js', 'src/state-pension.js', 'src/state-pension-defaults.js', 'src/income-stages.js', 'src/income-stage-ui.js')
 foreach ($relative in @('src') + $files) {
     $item = Get-Item -LiteralPath (Join-Path $root $relative) -Force
     if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw "Linked build input is forbidden: $relative" }
