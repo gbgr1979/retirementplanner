@@ -1,10 +1,11 @@
 import {formatMoneyValue,parseMoneyInput,attachMoneyInputs} from './money-input.js';
 import {mountWizard} from './wizard-ui.js';
-import {escapeHTML,discountFactor,retirementSnapshot,updatePlanScreen,adjustAnnualWithdrawal,withdrawalOutcome,retirementDateLinks,retirementYearControls,shiftRetirementYear,retirementMarker,reconcileRetirementLinks,projectionTimeline,svgChart} from './view.js';
+import {escapeHTML,discountFactor,retirementSnapshot,updatePlanScreen,adjustAnnualWithdrawal,withdrawalOutcome,retirementDateLinks,retirementYearControls,shiftRetirementYear,retirementMarker,reconcileRetirementLinks,projectionTimeline,svgChart,mountHelpDialog,withdrawalCardSummary} from './view.js';
 import {createExamplePlan,validatePlan,parsePlan,serializePlan} from './plan.js';
 import {project} from './model.js';
 const $=id=>document.getElementById(id);
 attachMoneyInputs(document);
+mountHelpDialog(document);
 const esc=escapeHTML;
 const colours=['#21624d','#749f81','#c39a4b','#60849b','#9a7183','#8c8764','#54767b','#bd7961'];
 const money=v=>new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:0}).format(v||0);
@@ -46,6 +47,7 @@ const warnings=[...new Set([...(plan.includePartner&&plan.people.some(p=>p.name=
 }
 function renderLedger(){const y=result.years.find(y=>String(y.year)===String(selectedYear));if(!y)return;const f=factor(y.year);const rows=[['Opening wealth',y.opening],['+ Gross contributions',y.contributions],['+ Growth',y.growth],['− Fees',y.fees],['− Total gross withdrawals',y.withdrawals],['Closing wealth',y.closing],['Gross withdrawal target',y.withdrawalTarget],['Of total withdrawals: scheduled',y.scheduledWithdrawalsGross],['Of total withdrawals: recurring',y.recurringWithdrawalsGross],['Gross income streams',y.incomeGross],['Estimated income tax',y.tax],['Income after modelled tax',y.incomeNet],['Withdrawals after modelled tax',y.withdrawalsNet],['Spending target',y.spending],['Unmet gross withdrawal target',y.unmetWithdrawal],['Unfunded spending gap (monthly deficits)',y.shortfall]];$('ledger').innerHTML=`<p class="help">${real?"Today's money: all entries in this annual ledger share the same year-end discount factor so the balance reconciles.":'Future pounds: nominal cash values.'} Transfers are internal movements. Cash estimates exclude savings-interest tax.</p><table><caption class="sr-only">Annual financial ledger for ${y.year}</caption><tbody>${rows.map(([name,value])=>`<tr ${name==='Closing wealth'?'class="ledger-total"':''}><th scope="row">${name}</th><td>${money((value||0)/f)}</td></tr>`).join('')}</tbody></table><h4>Balances by pot</h4><table><caption class="sr-only">Year-end balances by pot for ${y.year}</caption><tbody>${plan.pots.filter(p=>plan.includePartner||p.owner!=='partner').map(p=>`<tr><th scope="row">${esc(p.name)}</th><td>${money((y.balances[p.id]||0)/f)}</td></tr>`).join('')}</tbody></table>`;}
 function renderWithdrawalControl(){
+ $('plan-help-error').hidden=true;$('plan-help-error').textContent='';
  $('withdrawal-input-error').hidden=true;$('withdrawal-amount').removeAttribute('aria-invalid');
  $('withdrawal-amount').value=formatMoneyValue(plan.drawdown.annualAmount);
  $('withdrawal-inflation').checked=plan.drawdown.inflationLinked;
@@ -54,8 +56,9 @@ function renderWithdrawalControl(){
  const who=plan.includePartner?'Household':'Your';
  const retirement=plan.people.find(p=>p.id==='you').retirementMonth;
  $('withdrawal-basis').textContent=`${who} gross pot-withdrawal target, before tax. ${plan.drawdown.inflationLinked?`In ${plan.startMonth} pounds, increasing with inflation`:'Fixed future pounds, not inflation-linked'}, from your retirement in ${retirement}. Buttons change it by £1,000; chart display does not change this basis.`;
+ $('withdrawal-summary').textContent=`Before tax · ${plan.drawdown.inflationLinked?'in '+plan.startMonth+' pounds':'fixed future pounds'}`;
  const outcome=withdrawalOutcome(plan,result);
- $('withdrawal-status').textContent=outcome.text;
+ $('withdrawal-status').textContent=withdrawalCardSummary(plan,result);$('withdrawal-detail-status').textContent=outcome.text;
  $('withdrawal-status').classList.toggle('has-gap',outcome.hasGap);
 }
 function changeWithdrawal(direction=0){
@@ -69,7 +72,8 @@ function changeWithdrawal(direction=0){
 
 function renderRetirementControl(){
  const month=plan.people.find(p=>p.id==='you').retirementMonth,controls=retirementYearControls(plan,retirementLinks);
- $('retirement-date').textContent=new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-GB',{month:'long',year:'numeric',timeZone:'UTC'});
+ const date=new Date(`${month}-01T00:00:00Z`),monthName=date.toLocaleDateString('en-GB',{month:'long',timeZone:'UTC'});
+ $('retirement-date').textContent=month.slice(0,4);$('retirement-date').setAttribute('aria-label',`Retirement ${monthName} ${month.slice(0,4)}`);$('retirement-month').textContent=`${monthName} · 1-year steps`;
  $('retirement-minus').disabled=controls.earlierMonth===month;$('retirement-plus').disabled=controls.laterMonth===month;
  $('retirement-bounds').textContent=`Each click changes one year and keeps the month. Projection range: ${controls.minMonth} to ${controls.maxMonth}. Changes cannot put matching contribution end dates before their start dates.`;
 }
@@ -84,7 +88,7 @@ $('retirement-plus').addEventListener('click',()=>changeRetirement(1));
 $('withdrawal-minus').addEventListener('click',()=>changeWithdrawal(-1));
 $('withdrawal-plus').addEventListener('click',()=>changeWithdrawal(1));
 $('withdrawal-amount').addEventListener('input',event=>{if(!event.isComposing)changeWithdrawal();});
-$('withdrawal-inflation').addEventListener('change',()=>changeWithdrawal());
+$('withdrawal-inflation').addEventListener('change',()=>{changeWithdrawal();const failed=!$('withdrawal-input-error').hidden;$('plan-help-error').hidden=!failed;$('plan-help-error').textContent=failed?$('withdrawal-input-error').textContent:'';if(failed)$('withdrawal-inflation').checked=plan.drawdown.inflationLinked;});
 $('editor').addEventListener('submit',e=>{e.preventDefault();apply();});$('editor').addEventListener('input',()=>{dirty=true;status();$('edit-status').textContent='Edits not yet applied to the charts.';});
 $('editor').addEventListener('click',e=>{const button=e.target.closest('button');if(!button)return;if(button.dataset.remove){if(!window.confirm('Remove this item from the plan? You can cancel to keep it.'))return;const [key,index]=button.dataset.remove.split(':');const draft=readEditor();if(key==='pots'&&draft.events.some(ev=>ev.potId===draft.pots[index].id||ev.toPotId===draft.pots[index].id)){notify('Remove events referencing this pot before removing the pot.',true);return;}draft[key].splice(Number(index),1);try{acceptEdits(draft);dirty=true;status();renderEditor();renderResults();$('editor').querySelector(`[data-add="${key}"]`)?.focus();notify('');}catch(err){notify(err.message,true);}}
 if(button.dataset.add){if(!apply())return;const key=button.dataset.add,id='item-'+crypto.randomUUID();if(key==='pots')plan.pots.push({id,name:'New savings pot',owner:'you',type:'savings',balance:0,monthlyContribution:0,employerContribution:0,contributionBasis:'gross',growth:3,fee:0,contributionStart:plan.startMonth,contributionEnd:plan.people.find(p=>p.id==='you').retirementMonth,accessAge:57});if(key==='incomes')plan.incomes.push({id,name:'New pension income',owner:'you',type:'db',monthlyAmount:0,startMonth:plan.people.find(p=>p.id==='you').retirementMonth,endMonth:'2100-12',escalation:2});if(key==='events'){if(!plan.pots.length){notify('Add a pot before creating an event.',true);return;}plan.events.push({id,name:'Planned withdrawal',month:plan.people.find(p=>p.id==='you').retirementMonth,type:'withdrawal',potId:plan.pots[0].id,toPotId:'',amount:1000});}renderEditor();renderResults();$('editor').querySelector(`[name="${key}.${plan[key].length-1}.name"]`)?.focus();}});
