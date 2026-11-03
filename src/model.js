@@ -1,4 +1,5 @@
 import {validatePlan} from './plan.js';
+import {annualTargetAtMonth, stageIndexAtMonth} from './income-stages.js';
 
 /** Deterministic illustration, not regulated advice. Tax rules frozen at 2026/27.
  * Sources checked 2 November 2026: gov.uk/income-tax-rates and
@@ -72,6 +73,7 @@ export function project(plan, {scenario='base'}={}) {
     'Only modelled non-savings income and taxable DC withdrawals enter income tax. Savings-interest tax, NI, capital gains, dividends, benefits, marriage allowance, contribution tax deductions and higher-rate relief are excluded.',
     'Spending and income begin as amounts in plan-start pounds, then rise at inflation / each income’s escalation. Event amounts are fixed future nominal gross withdrawals.',
     'The annual before-tax target starts in the primary person’s retirement month and is split monthly. Inflation-linked targets use plan-start purchasing power, otherwise they stay fixed nominal.',
+    'Optional income stages use the primary person’s age, starting in the first full month on or after their birthday, never before retirement. All stage amounts use the original plan-start inflation anchor.',
     totalIncomeMode
       ? 'Total-income mode: active gross State Pension, defined-benefit and other income reduce the household target before pot withdrawals. Income above the target is not reinvested and does not create future credit.'
       : 'Pot-withdrawal mode: the target is gross pot withdrawals alone. State Pension, defined-benefit and other income remain additional and do not reduce this target.',
@@ -149,8 +151,9 @@ export function project(plan, {scenario='base'}={}) {
         if(target.type.endsWith('Isa')) warnings.add(`${prefix}: ISA transfer/subscription treatment is not checked. Confirm the permitted transfer process and annual subscription allowance.`);
       } else removeForSpending(pot,event.amount);
     }
-    const grossTarget=month>=primary.retirementMonth
-      ? drawdown.annualAmount/12*(drawdown.inflationLinked?Math.pow(1+plan.inflation/100,(index-begin)/12):1):0;
+    row.activeAnnualTarget=annualTargetAtMonth(plan,month);
+    row.stageIndex=stageIndexAtMonth(plan,month);
+    const grossTarget=row.activeAnnualTarget/12*(drawdown.inflationLinked?Math.pow(1+plan.inflation/100,(index-begin)/12):1);
     if(totalIncomeMode) {
       row.incomeTarget=grossTarget;
       row.incomeOffset=Math.min(grossTarget,row.incomeGross);

@@ -35,13 +35,13 @@ export function adjustAnnualWithdrawal(amount,direction) {
 }
 
 export function withdrawalOutcome(plan,result) {
- if(!plan.drawdown?.annualAmount)return {hasGap:false,text:'Choose an annual amount to test. Scheduled events still apply.'};
- const active=result.months.filter(m=>plan.drawdown.mode==='totalIncome'?m.incomeTarget>0:m.withdrawalTarget>0);
- if(!active.length)return {hasGap:false,text:'Your retirement starts outside this projection. Extend the planning horizon to test withdrawals.'};
+ if(!plan.drawdown?.annualAmount&&!plan.drawdown?.stages?.some(stage=>stage.annualAmount>0))return {hasGap:false,text:'Choose an annual amount to test. Scheduled events still apply.'};
+ const active=result.months.filter(m=>m.activeAnnualTarget>0||(plan.drawdown.mode==='totalIncome'?m.incomeTarget>0:m.withdrawalTarget>0));
+ if(!active.length)return {hasGap:false,text:result.months.some(m=>m.month>=plan.people.find(p=>p.id==='you').retirementMonth)?'No positive target applies within this projection. Check your income stages.':'Your retirement starts outside this projection. Extend the planning horizon to test withdrawals.'};
  const gap=result.firstUnmetWithdrawal;
  const date=month=>new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-GB',{month:'long',year:'numeric',timeZone:'UTC'});
  if(gap)return {hasGap:true,text:`First ${plan.drawdown.mode==='totalIncome'?'income-target':'withdrawal'} shortfall: ${date(gap.month)}. ${gap.locked>0.01?'Some pension funds are still locked — this is not the same as all your money running out.':gap.total<=0.01?'Your modelled pots are depleted at that point.':'The accessible pots cannot meet that month’s target.'} Try a lower amount to compare.`};
- return {hasGap:false,text:`This target is funded through ${date(active.at(-1).month)} in this scenario. That is the end of the projection, not a guarantee of sustainable income.`};
+ return {hasGap:false,text:`This target is funded through ${date(result.months.at(-1).month)} in this scenario. That is the end of the projection, not a guarantee of sustainable income.`};
 }
 
 const monthNumber = value => Number(value.slice(0,4))*12+Number(value.slice(5,7))-1;
@@ -120,7 +120,7 @@ export function projectionTimeline(plan,result) {
 }
 
 /** Pure annual chart rendering: always uses every provided projection year. */
-export function svgChart(years,series,stacked=false,marker=null){const w=760,h=260,left=66,right=16,top=20,bottom=34,plotH=h-top-bottom;const max=Math.max(1,...years.map((y,i)=>stacked?series.reduce((s,a)=>s+(a.values[i]||0),0):Math.max(...series.map(a=>a.values[i]||0))));const x=i=>left+i*(w-left-right)/Math.max(1,years.length-1);const y=v=>h-bottom-v/max*plotH;let svg=`<svg viewBox="0 0 ${w} ${h}" data-start-year="${years[0].year}" data-end-year="${years.at(-1).year}" role="img" aria-label="${stacked?'Projected year-end balances by pot':'Annual estimated cash and spending'}"><title>${stacked?'Wealth projection':'Income and spending'} from ${years[0].year} to ${years.at(-1).year}; full values in the annual ledger below</title>`;for(let i=0;i<4;i++){let value=max*i/3;svg+=`<line x1="${left}" y1="${y(value)}" x2="${w-right}" y2="${y(value)}" class="gridline"/><text x="${left-8}" y="${y(value)+4}" text-anchor="end">£${Math.round(value/1000)}k</text>`;}let base=years.map(()=>0);series.forEach(s=>{if(stacked){const tops=s.values.map((v,i)=>base[i]+v);svg+=`<path fill="${s.colour}" d="M ${tops.map((v,i)=>`${x(i)},${y(v)}`).join(' L ')} L ${base.map((v,i)=>`${x(i)},${y(v)}`).reverse().join(' L ')} Z"/>`;base=tops;}else svg+=`<polyline fill="none" stroke="${s.colour}" stroke-width="3" ${s.dash?'stroke-dasharray="7 5"':''} points="${s.values.map((v,i)=>`${x(i)},${y(v)}`).join(' ')}"/>`;});years.forEach((a,i)=>{if(i===0||i===years.length-1||i%10===0)svg+=`<text x="${x(i)}" y="${h-8}" text-anchor="middle">${a.year}</text>`;});if(marker?.visible){const mx=x(marker.index),anchor=mx>(w-left-right)/2+left?'end':'start',tx=mx+(anchor==='end'?-7:7);svg+=`<g role="img" aria-label="${escapeHTML(marker.label)}"><line class="retirement-marker" x1="${mx}" x2="${mx}" y1="${top}" y2="${h-bottom}"/><text class="retirement-marker-label" x="${tx}" y="${top+12}" text-anchor="${anchor}">${escapeHTML(marker.chartLabel||'Retirement')}</text></g>`;}return svg+'</svg>';}
+export function svgChart(years,series,stacked=false,marker=null,eventMarkers=[]){const w=760,h=260,left=66,right=16,top=20,bottom=34,plotH=h-top-bottom;const max=Math.max(1,...years.map((y,i)=>stacked?series.reduce((s,a)=>s+(a.values[i]||0),0):Math.max(...series.map(a=>a.values[i]||0))));const x=i=>left+i*(w-left-right)/Math.max(1,years.length-1);const y=v=>h-bottom-v/max*plotH;let svg=`<svg viewBox="0 0 ${w} ${h}" data-start-year="${years[0].year}" data-end-year="${years.at(-1).year}" role="img" aria-label="${stacked?'Projected year-end balances by pot':'Annual estimated cash and spending'}"><title>${stacked?'Wealth projection':'Income and spending'} from ${years[0].year} to ${years.at(-1).year}; full values in the annual ledger below</title>`;for(let i=0;i<4;i++){let value=max*i/3;svg+=`<line x1="${left}" y1="${y(value)}" x2="${w-right}" y2="${y(value)}" class="gridline"/><text x="${left-8}" y="${y(value)+4}" text-anchor="end">£${Math.round(value/1000)}k</text>`;}let base=years.map(()=>0);series.forEach(s=>{if(stacked){const tops=s.values.map((v,i)=>base[i]+v);svg+=`<path fill="${s.colour}" d="M ${tops.map((v,i)=>`${x(i)},${y(v)}`).join(' L ')} L ${base.map((v,i)=>`${x(i)},${y(v)}`).reverse().join(' L ')} Z"/>`;base=tops;}else svg+=`<polyline fill="none" stroke="${s.colour}" stroke-width="3" ${s.dash?'stroke-dasharray="7 5"':''} points="${s.values.map((v,i)=>`${x(i)},${y(v)}`).join(' ')}"/>`;});years.forEach((a,i)=>{if(i===0||i===years.length-1||i%10===0)svg+=`<text x="${x(i)}" y="${h-8}" text-anchor="middle">${a.year}</text>`;});if(marker?.visible){const mx=x(marker.index),anchor=mx>(w-left-right)/2+left?'end':'start',tx=mx+(anchor==='end'?-7:7);svg+=`<g role="img" aria-label="${escapeHTML(marker.label)}"><line class="retirement-marker" x1="${mx}" x2="${mx}" y1="${top}" y2="${h-bottom}"/><text class="retirement-marker-label" x="${tx}" y="${top+12}" text-anchor="${anchor}">${escapeHTML(marker.chartLabel||'Retirement')}</text></g>`;}const occupied=[];for(const event of eventMarkers){if(!Number.isInteger(event.index)||event.index<0||event.index>=years.length)continue;const mx=x(event.index),anchor=mx>(w-left-right)/2+left?'end':'start',tx=mx+(anchor==='end'?-7:7),width=(event.chartLabel||event.label).length*6.4,start=anchor==='end'?tx-width:tx,end=anchor==='end'?tx:tx+width;let row=0;while(occupied[row]?.some(([a,b])=>start<b+12&&end>a-12))row++;(occupied[row]??=[]).push([start,end]);const kind=event.kind==='state'?'state':'depletion';svg+=`<g role="img" aria-label="${escapeHTML(event.label)}"><line class="${kind}-marker" x1="${mx}" x2="${mx}" y1="${top}" y2="${h-bottom}"/><text class="${kind}-marker-label" x="${tx}" y="${top+32+row*18}" text-anchor="${anchor}">${escapeHTML(event.chartLabel||event.label)}</text></g>`;}return svg+'</svg>';}
 
 /** Native modal focus containment; help never reads or changes financial state. */
 export function mountHelpDialog(root,{triggerId='plan-help',dialogId='plan-help-dialog',closeId='plan-help-close'}={}) {
@@ -161,11 +161,11 @@ export function mountHelpDialog(root,{triggerId='plan-help',dialogId='plan-help-
 
 /** Compact card status; complete caveats remain available in the help dialog. */
 export function withdrawalCardSummary(plan,result) {
- if(!plan.drawdown.annualAmount)return 'Set an annual amount to compare withdrawals.';
+ if(!plan.drawdown.annualAmount&&!plan.drawdown.stages?.some(stage=>stage.annualAmount>0))return 'Set an annual amount to compare withdrawals.';
  const gap=result.firstUnmetWithdrawal;
  if(gap)return `Shortfall from ${readableMonth(gap.month)}. ${gap.locked>0.01?'Some pension funds remain locked.':gap.total<=0.01?'Modelled pots depleted.':'Accessible pots cannot cover the target.'}`;
- const last=result.months.filter(m=>plan.drawdown.mode==='totalIncome'?m.incomeTarget>0:m.withdrawalTarget>0).at(-1);
- return last?`Funded through ${readableMonth(last.month)} in this scenario. Not guaranteed.`:'Retirement is outside this projection.';
+ const last=result.months.filter(m=>m.activeAnnualTarget>0||(plan.drawdown.mode==='totalIncome'?m.incomeTarget>0:m.withdrawalTarget>0)).at(-1);
+ return last?`Funded through ${readableMonth(result.months.at(-1).month)} in this scenario. Not guaranteed.`:result.months.some(m=>m.month>=plan.people.find(p=>p.id==='you').retirementMonth)?'No positive income target applies within this projection.':'Retirement is outside this projection.';
 }
 
 /** Two monthly pot snapshots. End-of-plan is a planning assumption, not a death forecast. */
@@ -245,4 +245,55 @@ export function shiftGroupGrowth(plan,category,direction) {
  if(!canShiftGrowth(pots,direction))return plan;
  const affected=new Set(pots);
  return {...plan,pots:plan.pots.map(pot=>affected.has(pot)?{...pot,growth:steppedGrowth(pot.growth,direction)}:pot)};
+}
+
+/** Income events annotate annual columns; they never enter the wealth series. */
+export function projectionEventMarkers(plan,result) {
+ const markers=[],notes=[],months=result.months||[],years=result.years||[];
+ if(!months.length)return {markers,notes};
+ const primary=plan.people.find(person=>person.id==='you');
+ const activeOwners=new Set(plan.people.filter(person=>person.id==='you'||plan.includePartner&&person.id==='partner').map(person=>person.id));
+ const seen=new Set();
+ for(const income of plan.incomes||[]) {
+  if(income.type!=='state'||!activeOwners.has(income.owner)||!(income.monthlyAmount>0))continue;
+  // Positive configured receipts plus the actual projected income row establish
+  // inclusion. The model does not expose individual income-stream ledgers.
+  const receipt=months.find(row=>row.month>=income.startMonth&&row.month<=income.endMonth&&row.incomeGross>0);
+  if(!receipt)continue;
+  const owner=income.owner==='you'?'Your':"Partner’s";
+  const key=`${income.owner}:${income.startMonth}`;
+  if(seen.has(key))continue;
+  seen.add(key);
+  if(income.startMonth<months[0].month) {
+   notes.push(`${owner} State Pension is already in payment at the projection start (${readableMonth(months[0].month)}). It is income, not part of the pot balance.`);
+   continue;
+  }
+  const index=years.findIndex(row=>Number(row.year)===Number(receipt.month.slice(0,4)));
+  if(index<0)continue;
+  const chartLabel=`${owner} State Pension starts`;
+  const label=`${chartLabel}: ${readableMonth(receipt.month)}. Income, not pot wealth.`;
+  markers.push({index,label,chartLabel,kind:'state',month:receipt.month,owner:income.owner});
+  notes.push(`${label} The line marks that year’s plotted balance, not an exact monthly balance.`);
+ }
+ // Include the first opening balance, so a pot exhausted in month one counts.
+ // Exact zero is deliberate: even a small positive balance is not depletion.
+ let hadWealth=false;
+ for(let i=0;i<months.length;i++) {
+  const row=months[i];
+  if(row.opening>0)hadWealth=true;
+  if(row.total===0&&hadWealth) {
+   const index=years.findIndex(year=>Number(year.year)===Number(row.month.slice(0,4)));
+   if(index>=0) {
+    const recovers=months.slice(i+1).some(later=>later.total>0);
+    const age=ageAtMonthStart(primary?.dob,row.month);
+    const chartLabel=`${recovers?'Pot first reaches £0':'Pot ran out'}${age===null?'':` – age ${age}`}`;
+    const label=`${chartLabel}: ${readableMonth(row.month)}${age===null?'':` (your age at the start of the month)`}. All active pots, including locked pensions${plan.includePartner?' and your partner’s pots':''}, total £0 after this month’s transactions.${recovers?' The balance becomes positive again later.':''}`;
+    markers.push({index,label,chartLabel,kind:'depletion',month:row.month,age,recovers});
+    notes.push(`${label} The line marks that year’s plotted balance, not an exact monthly balance.`);
+   }
+   break;
+  }
+  if(row.total>0)hadWealth=true;
+ }
+ return {markers,notes};
 }

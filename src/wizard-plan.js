@@ -103,7 +103,7 @@ export function buildWizardPlan(draft) {
   const partner=person('partner',draft.includePartner?draft.partner:draft.you);
   if (!draft.includePartner) partner.name='Partner (details not entered)';
   const people=[you,partner], active=draft.includePartner?OWNERS:['you'];
-  const plan={version:PLAN_VERSION,drawdown:{mode:'pots',annualAmount:draft.monthlySpending*12,inflationLinked:true},name:'My retirement plan',startMonth:draft.startMonth,endAge:Math.min(Math.max(95,draft.you.retirementAge+5),draft.you.age+80,110),includePartner:draft.includePartner,inflation:draft.inflation,scenarioSpread:2,monthlySpending:draft.monthlySpending,spendingStart:you.retirementMonth,people,
+  const plan={version:PLAN_VERSION,drawdown:{stages:[],mode:'pots',annualAmount:draft.monthlySpending*12,inflationLinked:true},name:'My retirement plan',startMonth:draft.startMonth,endAge:Math.min(Math.max(95,draft.you.retirementAge+5),draft.you.age+80,110),includePartner:draft.includePartner,inflation:draft.inflation,scenarioSpread:2,monthlySpending:draft.monthlySpending,spendingStart:you.retirementMonth,people,
     pots:active.flatMap(owner=>TYPES.map(([suffix])=>draft.pots.find(p=>p.id===`${owner}-${suffix}`))).map(p=>({id:p.id,name:p.name,owner:p.owner,type:p.type,balance:p.balance,monthlyContribution:p.monthlyContribution,employerContribution:p.employerContribution,contributionBasis:'gross',growth:p.growth,fee:p.fee,contributionStart:draft.startMonth,contributionEnd:people.find(person=>person.id===p.owner).retirementMonth,accessAge:55})),incomes:[],events:[]};
   const endIndex=(startYear-draft.you.age+plan.endAge)*12+Number(month)-2;
   const lastMonth=`${Math.floor(endIndex/12)}-${String(endIndex%12+1).padStart(2,'0')}`;
