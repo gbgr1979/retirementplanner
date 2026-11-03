@@ -1,1 +1,16 @@
-{"name":"retirement-path-mvp","version":"0.4.0","private":true,"type":"module","scripts":{"dev":"node scripts/serve.mjs","build":"node scripts/build.mjs","test":"node --test","check":"node --check src/app.js && node --check src/model.js && node --check src/plan.js && npm test && npm run build"},"engines":{"node":">=22"}}
+{
+  "name": "retirement-path-mvp",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "build": "node scripts/build.mjs",
+    "test": "node --test",
+    "check": "node scripts/check.mjs",
+    "test:browser": "node scripts/browser-smoke.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

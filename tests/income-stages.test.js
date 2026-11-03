@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createExamplePlan,parsePlan,serializePlan} from '../src/plan.js';
 import {project,incomeTax} from '../src/model.js';
-import {stageStartMonth,stageIndexAtMonth,annualTargetAtMonth,incomeStageRanges} from '../src/income-stages.js';
+import {stageStartMonth,stageIndexAtMonth,annualTargetAtMonth,incomeStageRanges,incomeSequenceSummary} from '../src/income-stages.js';
 const near=(a,b)=>assert.ok(Math.abs(a-b)<.00001,`${a} != ${b}`);
 function plan(){
  const p=createExamplePlan();p.startMonth='2026-04';p.endAge=72;p.inflation=0;p.monthlySpending=0;p.events=[];p.incomes=[];
@@ -10,6 +10,17 @@ function plan(){
  p.pots=[{...p.pots[0],balance:1000000,growth:0,fee:0,monthlyContribution:0,contributionStart:'2026-04',contributionEnd:'2026-04'}];
  p.drawdown={mode:'pots',annualAmount:48000,inflationLinked:false,stages:[{fromAge:70,annualAmount:36000},{fromAge:71,annualAmount:24000}]};return p;
 }
+
+test('plain-language income summary describes effective age ranges and skips unused stages',()=>{
+ const p=plan();
+ assert.equal(incomeSequenceSummary(p),'£48,000 a year until age 70, then £36,000 a year until age 71, then £24,000 a year to plan end.');
+ p.people[0].retirementMonth='2028-06';
+ assert.equal(incomeSequenceSummary(p),'£24,000 a year to plan end.');
+ p.people[0].retirementMonth='2026-04';p.drawdown.stages=[{fromAge:110,annualAmount:1}];
+ assert.equal(incomeSequenceSummary(p),'£48,000 a year to plan end.');
+ p.people[0].retirementMonth='2030-04';
+ assert.equal(incomeSequenceSummary(p),'Retirement is outside this projection.');
+});
 test('birthday boundary uses same month only for day one, with leap and year rollovers',()=>{
  assert.equal(stageStartMonth('1957-04-01',70),'2027-04');assert.equal(stageStartMonth('1957-04-02',70),'2027-05');
  assert.equal(stageStartMonth('1957-12-31',70),'2028-01');assert.equal(stageStartMonth('1960-02-29',70),'2030-03');

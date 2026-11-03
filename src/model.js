@@ -94,8 +94,8 @@ export function project(plan, {scenario='base'}={}) {
   const mpaaOwners = new Set();
   for(let index=begin; index<end; index++) {
     const month=monthText(index), opening=sum(Object.values(balances));
-    const row={month,opening,balances:dictionary(),accessible:0,locked:0,total:0,incomeGross:0,incomeNet:0,withdrawalsGross:0,withdrawalsNet:0,withdrawalTarget:0,incomeTarget:0,incomeOffset:0,scheduledWithdrawalsGross:0,recurringWithdrawalsGross:0,unmetWithdrawal:0,tax:0,spending:0,shortfall:0,contributions:0,growth:0,fees:0,warnings:[],potLedger:dictionary(),taxComplete:false};
-    const ownerFlows=dictionary(people.map(p=>[p.id,{income:0,taxableWithdrawal:0,withdrawal:0}]));
+    const row={month,opening,balances:dictionary(),accessible:0,locked:0,total:0,incomeGross:0,incomeNet:0,statePensionGross:0,statePensionNet:0,withdrawalsGross:0,withdrawalsNet:0,withdrawalTarget:0,incomeTarget:0,incomeOffset:0,scheduledWithdrawalsGross:0,recurringWithdrawalsGross:0,unmetWithdrawal:0,tax:0,spending:0,shortfall:0,contributions:0,growth:0,fees:0,warnings:[],potLedger:dictionary(),taxComplete:false};
+    const ownerFlows=dictionary(people.map(p=>[p.id,{income:0,stateIncome:0,taxableWithdrawal:0,withdrawal:0}]));
     for(const pot of pots) {
       const person=personMap.get(pot.owner);
       const ledger={opening:balances[pot.id],contributions:0,growth:0,fees:0,withdrawals:0,transfersIn:0,transfersOut:0,closing:0};
@@ -117,6 +117,7 @@ export function project(plan, {scenario='base'}={}) {
       if(month>=income.startMonth&&month<=income.endMonth) {
         const amount=income.monthlyAmount*Math.pow(1+income.escalation/100,(index-begin)/12);
         ownerFlows[income.owner].income+=amount;row.incomeGross+=amount;
+        if (income.type === 'state') { ownerFlows[income.owner].stateIncome += amount; row.statePensionGross += amount; }
       }
     }
     // One accounting path for both explicit events and recurring withdrawals.
@@ -173,7 +174,7 @@ export function project(plan, {scenario='base'}={}) {
       if(pensionAccessible(pot,personMap.get(pot.owner),month)) row.accessible+=balances[pot.id]; else row.locked+=balances[pot.id];
     }
     row.balances=dictionary(Object.entries(balances));row.total=row.accessible+row.locked;
-    row.incomeNet=row.incomeGross;row.withdrawalsNet=row.withdrawalsGross;
+    row.incomeNet=row.incomeGross;row.statePensionNet=row.statePensionGross;row.withdrawalsNet=row.withdrawalsGross;
     for(const person of people) {
       const key=`${taxYear(month)}:${person.id}`;
       if(!taxBuckets.has(key)) taxBuckets.set(key,{person,gross:0,entries:[]});
@@ -190,6 +191,7 @@ export function project(plan, {scenario='base'}={}) {
       const withdrawalTaxShare=bucket.gross?tax*flow.taxableWithdrawal/bucket.gross:0;
       flow.row.tax+=incomeTaxShare+withdrawalTaxShare;
       flow.row.incomeNet-=incomeTaxShare;flow.row.withdrawalsNet-=withdrawalTaxShare;
+      flow.row.statePensionNet -= bucket.gross ? tax * flow.stateIncome / bucket.gross : 0;
     }
   }
   for(const [key,amount] of contributionsByTaxYear) {
@@ -201,9 +203,9 @@ export function project(plan, {scenario='base'}={}) {
     row.shortfall=Math.max(0,row.spending-row.incomeNet-row.withdrawalsNet);
     row.surplus=Math.max(0,row.incomeNet+row.withdrawalsNet-row.spending);
     const year=Number(row.month.slice(0,4));
-    if(!yearMap.has(year)) yearMap.set(year,{year,opening:row.opening,contributions:0,growth:0,fees:0,withdrawals:0,closing:0,incomeGross:0,incomeNet:0,withdrawalsNet:0,withdrawalTarget:0,incomeTarget:0,incomeOffset:0,scheduledWithdrawalsGross:0,recurringWithdrawalsGross:0,unmetWithdrawal:0,spending:0,shortfall:0,tax:0,accessible:0,locked:0,balances:dictionary(),potLedger:dictionary()});
+    if(!yearMap.has(year)) yearMap.set(year,{year,opening:row.opening,contributions:0,growth:0,fees:0,withdrawals:0,closing:0,incomeGross:0,incomeNet:0,statePensionGross:0,statePensionNet:0,withdrawalsNet:0,withdrawalTarget:0,incomeTarget:0,incomeOffset:0,scheduledWithdrawalsGross:0,recurringWithdrawalsGross:0,unmetWithdrawal:0,spending:0,shortfall:0,tax:0,accessible:0,locked:0,balances:dictionary(),potLedger:dictionary()});
     const annual=yearMap.get(year);
-    for(const key of ['contributions','growth','fees','incomeGross','incomeNet','withdrawalsNet','withdrawalTarget','incomeTarget','incomeOffset','scheduledWithdrawalsGross','recurringWithdrawalsGross','unmetWithdrawal','spending','shortfall','tax']) annual[key]+=row[key];
+    for(const key of ['contributions','growth','fees','incomeGross','incomeNet','statePensionGross','statePensionNet','withdrawalsNet','withdrawalTarget','incomeTarget','incomeOffset','scheduledWithdrawalsGross','recurringWithdrawalsGross','unmetWithdrawal','spending','shortfall','tax']) annual[key]+=row[key];
     annual.withdrawals+=row.withdrawalsGross;annual.closing=row.total;annual.accessible=row.accessible;annual.locked=row.locked;annual.balances=dictionary(Object.entries(row.balances));
     for(const [id,l] of Object.entries(row.potLedger)) {
       if(!Object.hasOwn(annual.potLedger,id)) annual.potLedger[id]={opening:l.opening,contributions:0,growth:0,fees:0,withdrawals:0,transfersIn:0,transfersOut:0,closing:0};

@@ -1,6 +1,6 @@
 import {parseMoneyInput, formatMoneyValue} from './money-input.js';
 import {validatePlan} from './plan.js';
-import {stageStartMonth} from './income-stages.js';
+import {stageStartMonth, incomeSequenceSummary} from './income-stages.js';
 
 const copy = value => JSON.parse(JSON.stringify(value));
 const esc = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -144,14 +144,18 @@ export function mountIncomeStages({root = document, getPlan, onComplete, onDraft
     for(const [i,amount] of [[-1,draft.annualAmount],...draft.stages.map((stage,i)=>[i,stage.annualAmount])]){
       const value=parseMoneyInput(amount);find(`is-minus-${i}`).disabled=Number.isFinite(value)&&value<=0;find(`is-plus-${i}`).disabled=Number.isFinite(value)&&value>=12000000;
     }
+    try {
+      const summaryDraft = {...draft, stages:draft.stages.map((stage,i)=>({...stage,fromAge:String(displayBoundary(i)?.age)}))};
+      find('is-income-summary').textContent = incomeSequenceSummary(buildIncomeStagePlan(snapshot, summaryDraft));
+    } catch { find('is-income-summary').textContent = 'Finish the income ranges to update this summary.'; }
   }
   function render(focus) {
     const money=(id,value,i)=>`<label class="sr-only" for="${id}">Annual amount before tax for row ${i+2}</label><div class="plan-stepper range-stepper"><button type="button" id="is-minus-${i}" data-step="-1" data-stage="${i}" aria-label="Reduce annual amount for row ${i+2} by £1,000">−</button><div class="plan-value"><span aria-hidden="true">£</span><input type="text" data-money inputmode="decimal" id="${id}" value="${esc(value)}" aria-describedby="${id}-error"></div><button type="button" id="is-plus-${i}" data-step="1" data-stage="${i}" aria-label="Increase annual amount for row ${i+2} by £1,000">+</button></div><span class="field-error" id="${id}-error"></span>`;
     const until=i=>i<draft.stages.length?`<label class="sr-only" for="is-year-${i}">End year for row ${i+1} (exclusive)</label><input class="range-year" type="text" inputmode="numeric" id="is-year-${i}" value="${esc(years[i].text)}" aria-describedby="is-year-${i}-error is-boundary-${i}"><p class="plan-control-hint" id="is-boundary-${i}"></p><span class="field-error" id="is-year-${i}-error"></span>`:'<strong id="is-plan-end"></strong><p id="is-plan-end-note" class="plan-control-hint"></p>';
-    content.innerHTML=`<div id="is-errors" class="field-error" role="alert" tabindex="-1" hidden></div><p id="is-dob-notice" class="plan-control-hint" role="status" hidden></p><table class="income-range-table"><caption class="sr-only">Annual income ranges before tax. End years are exclusive.</caption><thead><tr><th scope="col">From year</th><th scope="col">End year</th><th scope="col">Annual amount before tax</th></tr></thead><tbody>
-      <tr><td data-label="From year"><strong id="is-baseline-range"></strong><p id="is-baseline-date" class="plan-control-hint"></p></td><td data-label="End year">${until(0)}</td><td data-label="Annual amount before tax">${money('is-baseline',draft.annualAmount,-1)}</td></tr>
-      ${draft.stages.map((stage,i)=>`<tr><td data-label="From year"><strong id="is-from-${i}"></strong><p class="plan-control-hint" id="is-range-${i}"></p><button type="button" class="text-button range-remove" id="is-remove-${i}" data-remove-stage="${i}">Remove row</button></td><td data-label="End year">${until(i+1)}</td><td data-label="Annual amount before tax">${money(`is-amount-${i}`,stage.annualAmount,i)}</td></tr>`).join('')}
-      </tbody><tfoot><tr><td colspan="3"><div class="income-range-footer"><button type="button" id="is-add" ${draft.stages.length>=10?'disabled':''}>+ Add another row</button><p class="plan-control-hint">Starts with the previous amount. Edit the end year and amount to suit your plan.</p></div></td></tr></tfoot></table><p id="is-age-basis" class="plan-control-hint"></p>`;
+    content.innerHTML=`<div id="is-errors" class="field-error" role="alert" tabindex="-1" hidden></div><p id="is-dob-notice" class="plan-control-hint" role="status" hidden></p><div class="income-table-scroll" role="region" aria-label="Income periods"><table class="income-range-table"><caption class="sr-only">Annual income ranges before tax. Until dates are exclusive: the next row starts then.</caption><thead><tr><th scope="col">From</th><th scope="col">Until</th><th scope="col">Income / year before tax</th></tr></thead><tbody>
+      <tr><td data-label="From"><strong id="is-baseline-range"></strong><p id="is-baseline-date" class="plan-control-hint"></p></td><td data-label="Until">${until(0)}</td><td data-label="Income / year">${money('is-baseline',draft.annualAmount,-1)}</td></tr>
+      ${draft.stages.map((stage,i)=>`<tr><td data-label="From"><div class="range-from-title"><strong id="is-from-${i}"></strong><button type="button" class="text-button range-remove" id="is-remove-${i}" data-remove-stage="${i}" title="Remove this income period">×</button></div><p class="plan-control-hint" id="is-range-${i}"></p></td><td data-label="Until">${until(i+1)}</td><td data-label="Income / year">${money(`is-amount-${i}`,stage.annualAmount,i)}</td></tr>`).join('')}
+      </tbody></table></div><div class="income-range-footer"><button type="button" id="is-add" ${draft.stages.length>=10?'disabled':''}>+ Change income later</button><p id="is-income-summary" class="income-sequence"></p></div><p id="is-age-basis" class="sr-only"></p>`;
     updateRanges();if(focus)find(focus)?.focus();
   }
   function readPlan(base=getPlan(),focus=true) {

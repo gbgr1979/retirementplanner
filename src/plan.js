@@ -139,6 +139,42 @@ export function serializePlan(plan) {
   if (new TextEncoder().encode(text).byteLength > MAX_PLAN_BYTES) throw new Error('Plan file exceeds the 1 MB limit.');
   return text;
 }
+/** Add to an independent candidate; failed additions never change the live plan. */
+export function addPlanItem(plan, collection, id = 'item-' + crypto.randomUUID()) {
+  const initial = validatePlan(plan);
+  if (!initial.valid) throw new Error(initial.errors.join('\n'));
+  if (!['pots', 'incomes', 'events'].includes(collection)) throw new Error('Unknown plan item type.');
+  const candidate = structuredClone(plan);
+  const primary = candidate.people.find(person => person.id === 'you');
+  const startMonth = [candidate.startMonth, primary.retirementMonth].sort().at(-1);
+  const endIndex = Math.min(
+    Number(primary.dob.slice(0, 4)) * 12 + Number(primary.dob.slice(5, 7)) - 1 + candidate.endAge * 12,
+    Number(candidate.startMonth.slice(0, 4)) * 12 + Number(candidate.startMonth.slice(5, 7)) - 1 + 80 * 12
+  ) - 1;
+  const horizonMonth = `${Math.floor(endIndex / 12)}-${String(endIndex % 12 + 1).padStart(2, '0')}`;
+  if (collection === 'pots') candidate.pots.push({
+    id, name: 'New savings pot', owner: 'you', type: 'savings', balance: 0,
+    monthlyContribution: 0, employerContribution: 0, contributionBasis: 'gross', growth: 3, fee: 0,
+    contributionStart: candidate.startMonth, contributionEnd: startMonth, accessAge: 57
+  });
+  if (collection === 'incomes') candidate.incomes.push({
+    id, name: 'New pension income', owner: 'you', type: 'db', monthlyAmount: 0,
+    startMonth, endMonth: [startMonth, horizonMonth].sort().at(-1), escalation: 2
+  });
+  if (collection === 'events') {
+    const pot = candidate.pots.find(pot => pot.owner === 'you')
+      ?? candidate.pots.find(pot => candidate.includePartner && pot.owner === 'partner');
+    if (!pot) throw new Error('Add an included pot before creating an event.');
+    candidate.events.push({
+      id, name: 'Planned withdrawal', month: startMonth, type: 'withdrawal',
+      potId: pot.id, toPotId: '', amount: 1000
+    });
+  }
+  const result = validatePlan(candidate);
+  if (!result.valid) throw new Error(result.errors.join('\n'));
+  return candidate;
+}
+
 export function createExamplePlan() {
   return {
     version: PLAN_VERSION, drawdown: {mode: 'pots', annualAmount: 0, inflationLinked: true, stages: []}, name: 'Illustrative retirement plan', startMonth: '2026-11', endAge: 95, includePartner: false,

@@ -1,3 +1,4 @@
+import {formatMoneyValue} from './money-input.js';
 /** Pure display helpers; no browser state or financial calculation. */
 export const escapeHTML=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function discountFactor(plan,months,year,real=true){
@@ -5,6 +6,18 @@ export function discountFactor(plan,months,year,real=true){
  const last=months.filter(m=>Number(m.month.slice(0,4))===Number(year)).at(-1)?.month||`${year}-12`;
  const elapsed=(Number(last.slice(0,4))-Number(plan.startMonth.slice(0,4)))*12+Number(last.slice(5))-Number(plan.startMonth.slice(5))+1;
  return Math.pow(1+plan.inflation/100,Math.max(0,elapsed)/12);
+}
+
+/** State Pension is a component of total cash, never an additional pot balance. */
+export function incomeChartSeries(plan, result, real = true) {
+ const values = key => result.years.map(year => (year[key] || 0) / discountFactor(plan, result.months, year.year, real));
+ return [
+  {colour:'#21624d', label:'Total cash after modelled tax', values:result.years.map(year => (year.incomeNet + year.withdrawalsNet) / discountFactor(plan, result.months, year.year, real))},
+  ...(result.years.some(year=>year.statePensionGross>0)
+   ? [{colour:'#74479b', label:'State Pension (included in total cash)', values:values('statePensionNet')}] : []),
+  {colour:'#ad713c', label:'Spending target', dash:true, values:values('spending')},
+  {colour:'#a84c45', label:'Unfunded monthly gaps', dash:true, values:values('shortfall')}
+ ];
 }
 export function retirementSnapshot(plan,years){
  const person=plan.people.find(p=>p.id==='you');
@@ -34,7 +47,7 @@ export function adjustAnnualWithdrawal(amount,direction) {
  return Math.min(MAX_ANNUAL_WITHDRAWAL*100,Math.max(0,Math.round(amount*100)+direction*100000))/100;
 }
 
-export function withdrawalOutcome(plan,result) {
+function grossWithdrawalOutcome(plan,result) {
  if(!plan.drawdown?.annualAmount&&!plan.drawdown?.stages?.some(stage=>stage.annualAmount>0))return {hasGap:false,text:'Choose an annual amount to test. Scheduled events still apply.'};
  const active=result.months.filter(m=>m.activeAnnualTarget>0||(plan.drawdown.mode==='totalIncome'?m.incomeTarget>0:m.withdrawalTarget>0));
  if(!active.length)return {hasGap:false,text:result.months.some(m=>m.month>=plan.people.find(p=>p.id==='you').retirementMonth)?'No positive target applies within this projection. Check your income stages.':'Your retirement starts outside this projection. Extend the planning horizon to test withdrawals.'};
@@ -42,6 +55,24 @@ export function withdrawalOutcome(plan,result) {
  const date=month=>new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-GB',{month:'long',year:'numeric',timeZone:'UTC'});
  if(gap)return {hasGap:true,text:`First ${plan.drawdown.mode==='totalIncome'?'income-target':'withdrawal'} shortfall: ${date(gap.month)}. ${gap.locked>0.01?'Some pension funds are still locked — this is not the same as all your money running out.':gap.total<=0.01?'Your modelled pots are depleted at that point.':'The accessible pots cannot meet that month’s target.'} Try a lower amount to compare.`};
  return {hasGap:false,text:`This target is funded through ${date(result.months.at(-1).month)} in this scenario. That is the end of the projection, not a guarantee of sustainable income.`};
+}
+
+/** Report monthly deficits even when the separate gross target is fully funded. */
+function spendingGapSummary(plan, result, real) {
+ const gap = result.months.find(row => row.shortfall > 0.000001);
+ if (!gap) return null;
+ const elapsed = monthNumber(gap.month) - monthNumber(plan.startMonth);
+ const factor = real ? Math.pow(1 + plan.inflation / 100, elapsed / 12) : 1;
+ const cash = new Intl.NumberFormat('en-GB', {style:'currency', currency:'GBP', minimumFractionDigits:2, maximumFractionDigits:2});
+ const money = value => cash.format(value / factor);
+ return `Spending gap from ${readableMonth(gap.month)}: ${money(gap.shortfall)} that month (${money(gap.incomeNet + gap.withdrawalsNet)} available against ${money(gap.spending)} planned, after modelled tax; ${real ? `in ${plan.startMonth} pounds` : 'future pounds'}).`;
+}
+
+export function withdrawalOutcome(plan, result, real = true) {
+ const gross = grossWithdrawalOutcome(plan, result);
+ const spending = spendingGapSummary(plan, result, real);
+ return {...gross, hasGap: gross.hasGap || Boolean(spending), hasWithdrawalGap: gross.hasGap,
+  hasSpendingGap: Boolean(spending), text: spending ? `${spending} ${gross.text}` : gross.text};
 }
 
 const monthNumber = value => Number(value.slice(0,4))*12+Number(value.slice(5,7))-1;
@@ -120,7 +151,7 @@ export function projectionTimeline(plan,result) {
 }
 
 /** Pure annual chart rendering: always uses every provided projection year. */
-export function svgChart(years,series,stacked=false,marker=null,eventMarkers=[]){const w=760,h=260,left=66,right=16,top=20,bottom=34,plotH=h-top-bottom;const max=Math.max(1,...years.map((y,i)=>stacked?series.reduce((s,a)=>s+(a.values[i]||0),0):Math.max(...series.map(a=>a.values[i]||0))));const x=i=>left+i*(w-left-right)/Math.max(1,years.length-1);const y=v=>h-bottom-v/max*plotH;let svg=`<svg viewBox="0 0 ${w} ${h}" data-start-year="${years[0].year}" data-end-year="${years.at(-1).year}" role="img" aria-label="${stacked?'Projected year-end balances by pot':'Annual estimated cash and spending'}"><title>${stacked?'Wealth projection':'Income and spending'} from ${years[0].year} to ${years.at(-1).year}; full values in the annual ledger below</title>`;for(let i=0;i<4;i++){let value=max*i/3;svg+=`<line x1="${left}" y1="${y(value)}" x2="${w-right}" y2="${y(value)}" class="gridline"/><text x="${left-8}" y="${y(value)+4}" text-anchor="end">£${Math.round(value/1000)}k</text>`;}let base=years.map(()=>0);series.forEach(s=>{if(stacked){const tops=s.values.map((v,i)=>base[i]+v);svg+=`<path fill="${s.colour}" d="M ${tops.map((v,i)=>`${x(i)},${y(v)}`).join(' L ')} L ${base.map((v,i)=>`${x(i)},${y(v)}`).reverse().join(' L ')} Z"/>`;base=tops;}else svg+=`<polyline fill="none" stroke="${s.colour}" stroke-width="3" ${s.dash?'stroke-dasharray="7 5"':''} points="${s.values.map((v,i)=>`${x(i)},${y(v)}`).join(' ')}"/>`;});years.forEach((a,i)=>{if(i===0||i===years.length-1||i%10===0)svg+=`<text x="${x(i)}" y="${h-8}" text-anchor="middle">${a.year}</text>`;});if(marker?.visible){const mx=x(marker.index),anchor=mx>(w-left-right)/2+left?'end':'start',tx=mx+(anchor==='end'?-7:7);svg+=`<g role="img" aria-label="${escapeHTML(marker.label)}"><line class="retirement-marker" x1="${mx}" x2="${mx}" y1="${top}" y2="${h-bottom}"/><text class="retirement-marker-label" x="${tx}" y="${top+12}" text-anchor="${anchor}">${escapeHTML(marker.chartLabel||'Retirement')}</text></g>`;}const occupied=[];for(const event of eventMarkers){if(!Number.isInteger(event.index)||event.index<0||event.index>=years.length)continue;const mx=x(event.index),anchor=mx>(w-left-right)/2+left?'end':'start',tx=mx+(anchor==='end'?-7:7),width=(event.chartLabel||event.label).length*6.4,start=anchor==='end'?tx-width:tx,end=anchor==='end'?tx:tx+width;let row=0;while(occupied[row]?.some(([a,b])=>start<b+12&&end>a-12))row++;(occupied[row]??=[]).push([start,end]);const kind=event.kind==='state'?'state':'depletion';svg+=`<g role="img" aria-label="${escapeHTML(event.label)}"><line class="${kind}-marker" x1="${mx}" x2="${mx}" y1="${top}" y2="${h-bottom}"/><text class="${kind}-marker-label" x="${tx}" y="${top+32+row*18}" text-anchor="${anchor}">${escapeHTML(event.chartLabel||event.label)}</text></g>`;}return svg+'</svg>';}
+export function svgChart(years,series,stacked=false,marker=null,eventMarkers=[]){const w=760,h=260,left=66,right=16,top=20,bottom=34,plotH=h-top-bottom;const max=Math.max(1,...years.map((y,i)=>stacked?series.reduce((s,a)=>s+(a.values[i]||0),0):Math.max(...series.map(a=>a.values[i]||0))));const x=i=>left+i*(w-left-right)/Math.max(1,years.length-1);const y=v=>h-bottom-v/max*plotH;let svg=`<svg viewBox="0 0 ${w} ${h}" data-start-year="${years[0].year}" data-end-year="${years.at(-1).year}" role="img" aria-label="${stacked?'Projected year-end balances by pot':'Annual estimated cash and spending'}"><title>${stacked?'Wealth projection':'Income and spending'} from ${years[0].year} to ${years.at(-1).year}; full values in the annual ledger below</title>`;for(let i=0;i<4;i++){let value=max*i/3;svg+=`<line x1="${left}" y1="${y(value)}" x2="${w-right}" y2="${y(value)}" class="gridline"/><text x="${left-8}" y="${y(value)+4}" text-anchor="end">£${Math.round(value/1000)}k</text>`;}let base=years.map(()=>0);series.forEach(s=>{if(stacked){const tops=s.values.map((v,i)=>base[i]+v);svg+=`<path fill="${s.colour}" d="M ${tops.map((v,i)=>`${x(i)},${y(v)}`).join(' L ')} L ${base.map((v,i)=>`${x(i)},${y(v)}`).reverse().join(' L ')} Z"/>`;base=tops;}else svg+=`<polyline ${s.label?`data-series="${escapeHTML(s.label)}"`:""} fill="none" stroke="${s.colour}" stroke-width="3" ${s.dash?'stroke-dasharray="7 5"':''} points="${s.values.map((v,i)=>`${x(i)},${y(v)}`).join(' ')}"/>`;});years.forEach((a,i)=>{if(i===0||i===years.length-1||i%10===0)svg+=`<text x="${x(i)}" y="${h-8}" text-anchor="middle">${a.year}</text>`;});if(marker?.visible){const mx=x(marker.index),anchor=mx>(w-left-right)/2+left?'end':'start',tx=mx+(anchor==='end'?-7:7);svg+=`<g role="img" aria-label="${escapeHTML(marker.label)}"><line class="retirement-marker" x1="${mx}" x2="${mx}" y1="${top}" y2="${h-bottom}"/><text class="retirement-marker-label" x="${tx}" y="${top+12}" text-anchor="${anchor}">${escapeHTML(marker.chartLabel||'Retirement')}</text></g>`;}const occupied=[];for(const event of eventMarkers){if(!Number.isInteger(event.index)||event.index<0||event.index>=years.length)continue;const mx=x(event.index),anchor=mx>(w-left-right)/2+left?'end':'start',tx=mx+(anchor==='end'?-7:7),width=(event.chartLabel||event.label).length*6.4,start=anchor==='end'?tx-width:tx,end=anchor==='end'?tx:tx+width;let row=0;while(occupied[row]?.some(([a,b])=>start<b+12&&end>a-12))row++;(occupied[row]??=[]).push([start,end]);const kind=event.kind==='state'?'state':'depletion';svg+=`<g role="img" aria-label="${escapeHTML(event.label)}"><line class="${kind}-marker" x1="${mx}" x2="${mx}" y1="${top}" y2="${h-bottom}"/><text class="${kind}-marker-label" x="${tx}" y="${top+32+row*18}" text-anchor="${anchor}">${escapeHTML(event.chartLabel||event.label)}</text></g>`;}return svg+'</svg>';}
 
 /** Native modal focus containment; help never reads or changes financial state. */
 export function mountHelpDialog(root,{triggerId='plan-help',dialogId='plan-help-dialog',closeId='plan-help-close'}={}) {
@@ -160,12 +191,18 @@ export function mountHelpDialog(root,{triggerId='plan-help',dialogId='plan-help-
 }
 
 /** Compact card status; complete caveats remain available in the help dialog. */
-export function withdrawalCardSummary(plan,result) {
+function grossWithdrawalCardSummary(plan,result) {
  if(!plan.drawdown.annualAmount&&!plan.drawdown.stages?.some(stage=>stage.annualAmount>0))return 'Set an annual amount to compare withdrawals.';
  const gap=result.firstUnmetWithdrawal;
  if(gap)return `Shortfall from ${readableMonth(gap.month)}. ${gap.locked>0.01?'Some pension funds remain locked.':gap.total<=0.01?'Modelled pots depleted.':'Accessible pots cannot cover the target.'}`;
  const last=result.months.filter(m=>m.activeAnnualTarget>0||(plan.drawdown.mode==='totalIncome'?m.incomeTarget>0:m.withdrawalTarget>0)).at(-1);
- return last?`Funded through ${readableMonth(result.months.at(-1).month)} in this scenario. Not guaranteed.`:result.months.some(m=>m.month>=plan.people.find(p=>p.id==='you').retirementMonth)?'No positive income target applies within this projection.':'Retirement is outside this projection.';
+ return last?`Gross target funded through ${readableMonth(result.months.at(-1).month)} in this scenario. Not guaranteed.`:result.months.some(m=>m.month>=plan.people.find(p=>p.id==='you').retirementMonth)?'No positive income target applies within this projection.':'Retirement is outside this projection.';
+}
+
+export function withdrawalCardSummary(plan, result, real = true) {
+ const gross = grossWithdrawalCardSummary(plan, result);
+ const spending = spendingGapSummary(plan, result, real);
+ return spending ? `${spending} ${gross}` : gross;
 }
 
 /** Two monthly pot snapshots. End-of-plan is a planning assumption, not a death forecast. */
@@ -296,4 +333,19 @@ export function projectionEventMarkers(plan,result) {
   if(row.total>0)hadWealth=true;
  }
  return {markers,notes};
+}
+
+/** Pure detailed-editor markup. State and event handling remain in app.js. */
+export function editorMarkup(plan) {
+ const esc = escapeHTML;
+ function field(label,path,value,type='number',options=null){const id='f-'+path.replaceAll('.','-'),currency=type==='number'&&label.includes('£');return `<label for="${id}">${esc(label)}${options?`<select id="${id}" name="${path}">${options.map(([v,l])=>`<option value="${v}" ${value===v?'selected':''}>${esc(l)}</option>`).join('')}</select>`:`<input id="${id}" name="${path}" type="${currency?'text':type}" value="${esc(currency?formatMoneyValue(value):value)}" ${currency?'data-money inputmode="decimal"':type==='number'?'step="any"':''}>`}</label>`;}
+const owners=()=>plan.people.map(p=>[p.id,p.name+(p.id==='partner'&&!plan.includePartner?' (excluded)':'')]);
+const types=[['savings','Cash savings'],['cashIsa','Cash ISA'],['stocksIsa','Stocks & shares ISA'],['sipp','SIPP'],['workplace','Workplace DC pension']];
+ return `<div class="editor-heading"><h2>Your plan</h2><span class="badge">PRIVATE BY DESIGN</span><button type="button" id="edit-state-pension-menu" class="state-pension-shortcut" aria-haspopup="dialog" aria-controls="state-pension-dialog">State Pension settings →</button><p class="help">Edit the weekly amount, claim month and annual increase, or switch it off.</p></div>
+ <details open><summary>01 <span>Household & timeline</span></summary><div class="fields">${field('Plan name','name',plan.name,'text')}${field('Projection begins','startMonth',plan.startMonth,'month')}${field('Plan until your age','endAge',plan.endAge)}<label class="check"><input name="includePartner" type="checkbox" ${plan.includePartner?'checked':''}> Include partner in results</label>${plan.people.map((p,i)=>`<fieldset ${p.id==='partner'&&!plan.includePartner?'class="muted-person"':''}><legend>${p.id==='partner'?'Partner (retained even when excluded)':'You'}</legend>${p.name==='Partner (details not entered)'?'<p class="help">Partner details were not entered in setup. These placeholder dates are not personal facts: replace them before including your partner.</p>':''}${field('Display name',`people.${i}.name`,p.name,'text')}${field('Date of birth',`people.${i}.dob`,p.dob,'date')}${field('Retirement month',`people.${i}.retirementMonth`,p.retirementMonth,'month')}${field('Income tax region',`people.${i}.region`,p.region,'text',[['rUK','England, Wales or Northern Ireland'],['scotland','Scotland']])}${field('Pension tax-free allowance already used (£)',`people.${i}.taxFreeUsed`,p.taxFreeUsed)}</fieldset>`).join('')}</div></details>
+ <details open><summary>02 <span>Savings & pension pots</span></summary><p class="help">Pension contributions: choose gross entering the pot or your net payment with basic-rate relief. Employer contributions are gross. If your monthly contribution already includes employer payments (as in guided setup), keep the employer field at £0, or subtract those payments before entering them separately. No higher-rate relief is added automatically.</p>${plan.pots.map((p,i)=>`<fieldset class="pot-card"><legend>${esc(p.name)}</legend><div class="fields">${field('Pot name',`pots.${i}.name`,p.name,'text')}${field('Owner',`pots.${i}.owner`,p.owner,'text',owners())}${field('Account type',`pots.${i}.type`,p.type,'text',types)}${field('Starting balance (£)',`pots.${i}.balance`,p.balance)}<div class="two-col">${field('Monthly contribution (£)',`pots.${i}.monthlyContribution`,p.monthlyContribution)}${field('Monthly employer (£)',`pots.${i}.employerContribution`,p.employerContribution)}</div>${field('Contribution basis',`pots.${i}.contributionBasis`,p.contributionBasis,'text',[['gross','Gross / cash entering account'],['netRelief','Net pension payment + 20% relief']])}<div class="two-col">${field('Growth / year (%)',`pots.${i}.growth`,p.growth)}${field('Fees / year (%)',`pots.${i}.fee`,p.fee)}</div><details><summary>Contribution dates & access</summary>${field('First contribution',`pots.${i}.contributionStart`,p.contributionStart,'month')}${field('Last contribution',`pots.${i}.contributionEnd`,p.contributionEnd,'month')}${field('Pension access age (55 now; 57 from Apr 2028)',`pots.${i}.accessAge`,p.accessAge)}<p class="help">Contributions also stop at the owner's retirement. Protected pension ages are not modelled.</p></details><button type="button" class="text-button danger" data-remove="pots:${i}">Remove pot</button></div></fieldset>`).join('')}<button type="button" data-add="pots">+ Add a pot</button></details>
+ <details><summary>03 <span>State Pension & other income</span></summary><p class="help">State and defined-benefit pensions are income, not investment pots. Check any illustrative State Pension amount against your own forecast. Use State Pension settings above for weekly amounts or to switch it off. Amounts are monthly gross in projection-start pounds.</p>${plan.incomes.map((p,i)=>`<fieldset><legend>${esc(p.name)}</legend><div class="fields">${field('Income name',`incomes.${i}.name`,p.name,'text')}${field('Owner',`incomes.${i}.owner`,p.owner,'text',owners())}${field('Income type',`incomes.${i}.type`,p.type,'text',[['state','State Pension forecast'],['db','Defined-benefit pension'],['other','Other taxable pension income']])}${field('Monthly gross income (£)',`incomes.${i}.monthlyAmount`,p.monthlyAmount)}${field('Starts',`incomes.${i}.startMonth`,p.startMonth,'month')}${field('Ends',`incomes.${i}.endMonth`,p.endMonth,'month')}${field('Annual escalation (%)',`incomes.${i}.escalation`,p.escalation)}<button type="button" class="text-button danger" data-remove="incomes:${i}">Remove income</button></div></fieldset>`).join('')}<button type="button" data-add="incomes">+ Add income</button></details>
+ <details><summary>04 <span>Spending & assumptions</span></summary><div class="fields">${field('Monthly household spending (£)', 'monthlySpending',plan.monthlySpending)}${field('Spending starts','spendingStart',plan.spendingStart,'month')}${field('Annual inflation (%)','inflation',plan.inflation)}<p class="help">Spending is in projection-start pounds and rises with inflation. Contributions are external funding, not deducted from this spending target. The annual withdrawal target above the charts controls recurring pot withdrawals. Spending is a separate comparison, not a second deduction.</p></div></details>
+ <details><summary>05 <span>Planned withdrawals & transfers</span></summary><p class="help">Amounts are fixed future pounds, gross removed from the source pot. Withdrawal cash is available for spending after modelled tax and counts towards the recurring target in that same month. Transfers move money, not income; only same-owner non-pension pots are supported.</p>${plan.events.map((p,i)=>`<fieldset><legend>${esc(p.name)}</legend><div class="fields">${field('Event name',`events.${i}.name`,p.name,'text')}${field('Month',`events.${i}.month`,p.month,'month')}${field('Event type',`events.${i}.type`,p.type,'text',[['withdrawal','Withdrawal for spending'],['transfer','Transfer between pots']])}${field('From pot',`events.${i}.potId`,p.potId,'text',plan.pots.map(p=>[p.id,p.name]))}${field('To pot (transfers only)',`events.${i}.toPotId`,p.toPotId,'text',[['','Not a transfer'],...plan.pots.map(p=>[p.id,p.name])])}${field('Gross amount (£)',`events.${i}.amount`,p.amount)}<button type="button" class="text-button danger" data-remove="events:${i}">Remove event</button></div></fieldset>`).join('')}<button type="button" data-add="events">+ Add event</button></details>
+ <div class="apply-row"><button type="submit" class="primary">Update projection →</button><p id="edit-status">Adjust your assumptions, then update.</p></div>`;
 }

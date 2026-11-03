@@ -86,6 +86,14 @@ test('flat plan is immediately visible; adding copies current amount and applies
   f.input('is-baseline','35,000');f.click('is-add');assert.equal(f.live.drawdown.stages[0].annualAmount,35000);assert.equal(f.nodes.get('is-year-0').value,'2049');assert.equal(f.root.activeElement.id,'is-year-0');
   f.input('is-amount-0','25,000');assert.equal(f.live.drawdown.stages[0].annualAmount,25000);assert.equal(f.live.drawdown.annualAmount,35000);
 });
+
+test('income summary follows edits and marks unfinished drafts without inventing amounts',()=>{
+  const f=fixture();f.input('is-baseline','40,000');f.click('is-add');f.input('is-amount-0','20,000');
+  assert.match(f.nodes.get('is-income-summary').textContent,/£40,000 a year until age 70, then £20,000 a year to plan end/);
+  const before=structuredClone(f.live);f.input('is-year-0','20');
+  assert.equal(f.nodes.get('is-income-summary').textContent,'Finish the income ranges to update this summary.');
+  assert.deepEqual(f.live,before);
+});
 test('typing preserves field node, raw partial value and focus during refresh',()=>{
   const f=fixture(),input=f.nodes.get('is-baseline');input.focus();f.input(input.id,'35,000.');f.controller.refresh(f.live);
   assert.equal(f.nodes.get(input.id),input);assert.equal(input.value,'35,000.');assert.equal(f.root.activeElement,input);
@@ -157,7 +165,7 @@ test('calendar year mapping is bijective across December rollover, leap day and 
 });
 test('table has exactly one editable end per boundary and mirrors exact start month and age',()=>{
   const p=fresh();p.people[0].dob='1970-12-15';p.drawdown.stages=[{fromAge:70,annualAmount:25000}];const f=fixture(p);
-  assert.match(f.content.html,/<thead><tr><th scope="col">From year/);assert.match(f.content.html,/<tfoot>/);assert.equal((f.content.html.match(/id="is-year-0"/g)||[]).length,1);
+  assert.match(f.content.html,/<thead><tr><th scope="col">From<\/th><th scope="col">Until/);assert.match(f.content.html,/Change income later/);assert.equal((f.content.html.match(/id="is-year-0"/g)||[]).length,1);
   assert.equal(f.nodes.get('is-year-0').value,'2041');assert.equal(f.nodes.get('is-from-0').textContent,'Jan 2041');assert.equal(f.nodes.get('is-boundary-0').textContent,'Jan 2041 · age 70');
   f.input('is-year-0','2042');assert.equal(f.live.drawdown.stages[0].fromAge,71);assert.equal(f.nodes.get('is-from-0').textContent,'Jan 2042');
 });

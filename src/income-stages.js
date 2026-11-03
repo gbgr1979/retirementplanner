@@ -41,3 +41,14 @@ export function incomeStageRanges(plan) {
     return {stageIndex,fromAge:stageIndex<0?null:plan.drawdown.stages[stageIndex].fromAge,annualAmount:annualTargetAtMonth(plan,startMonth),startMonth,endMonth:boundaries[index+1]};
   });
 }
+
+/** Describe only effective ranges; saved changes beyond the horizon stay excluded. */
+export function incomeSequenceSummary(plan) {
+  const ranges = incomeStageRanges(plan);
+  if (!ranges.length) return 'Retirement is outside this projection.';
+  const money = new Intl.NumberFormat('en-GB', {style:'currency', currency:'GBP', minimumFractionDigits:0, maximumFractionDigits:2});
+  return ranges.map((range, index) => {
+    const next = ranges[index + 1];
+    return `${index ? 'then ' : ''}${money.format(range.annualAmount)} a year ${next ? `until age ${next.fromAge}` : 'to plan end'}`;
+  }).join(', ') + '.';
+}

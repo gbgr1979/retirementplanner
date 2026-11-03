@@ -38,3 +38,84 @@ tr.ledger-total th,tr.ledger-total td{font-weight:bold;border-top:2px solid #b8c
 .range-stepper{width:100%;background:#fff;min-height:46px;grid-template-columns:36px minmax(0,1fr) 36px}.range-stepper>button{width:36px;height:46px}.range-stepper .plan-value{min-width:0;font-size:22px}.range-stepper input{width:100%;min-width:0;background:#fff;font-size:22px;min-height:44px}.range-remove{font-size:11px;margin-top:7px;padding:2px 0;min-height:30px;color:#546a5c;text-decoration:underline;text-underline-offset:3px}
 .income-range-table tfoot tr>td{border-bottom:0;padding-top:14px;padding-bottom:0}.income-range-footer{display:flex;align-items:center;gap:14px}.income-range-footer button{background:#fff;border:1px solid #9eb8a7;color:#24513c;white-space:nowrap}.income-range-footer p{margin:0;max-width:40ch;line-height:1.5}#is-age-basis{line-height:1.5;margin:12px 0 0}#is-errors{background:#fff3ee;border-radius:7px;padding:10px;line-height:1.5}.income-ranges input[aria-invalid=true]{border-color:#a33327;outline:1px solid #a33327}.income-ranges .field-error:empty{display:none}.income-range-table td:before{display:none}
 @container(max-width:550px){.income-range-table thead{position:absolute;width:1px;height:1px;clip-path:inset(50%);overflow:hidden}.income-range-table tbody,.income-range-table tfoot,.income-range-table tr,.income-range-table td{display:block;width:100%;box-sizing:border-box}.income-range-table tbody tr{border-bottom:1px solid #cbded0;padding:12px 0}.income-range-table tr>td{padding:7px 0;border:0}.income-range-table td[data-label]:before{content:attr(data-label);display:block;font-size:11px;font-weight:600;color:#40583c;margin-bottom:6px}.income-range-table .range-year{max-width:140px}.income-range-footer{align-items:flex-start;flex-direction:column;gap:8px}.range-stepper{max-width:100%}}
+
+/* Compact comparison controls keep the wealth chart close to every edit. */
+.withdrawal-card{padding:14px 16px;margin-bottom:12px}
+.withdrawal-card .plan-card-heading{display:grid;grid-template-columns:minmax(0,1fr)160px 30px;gap:14px;align-items:center;margin-bottom:8px}
+.withdrawal-card .plan-card-heading h3{font-size:23px}
+.withdrawal-card .plan-card-heading .plan-controls{display:block}
+.withdrawal-card .scenario-title .plan-control-hint{margin-top:5px;font-size:10px;line-height:1.4}
+.withdrawal-card .help-icon{width:30px;height:30px;font-size:16px}
+.withdrawal-card .plan-control-label{font-size:10px;margin-bottom:3px}
+.withdrawal-card .plan-stepper{min-height:34px;grid-template-columns:30px minmax(0,1fr) 30px}
+.withdrawal-card .plan-stepper>button{width:30px;height:34px;font-size:20px}
+.withdrawal-card .plan-stepper input,.withdrawal-card .plan-stepper output,.withdrawal-card .plan-value{font-size:20px;min-height:0;line-height:1.2}
+.withdrawal-card .plan-stepper input{padding:4px 1px;min-height:32px}
+.withdrawal-card #retirement-month{font-size:10px;margin:3px 0 0}
+.withdrawal-card .growth-controls{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:8px;padding-top:8px}
+.withdrawal-card .growth-controls .plan-control-hint,.withdrawal-card .growth-basis{display:none}
+.withdrawal-card .growth-stepper output.growth-mixed{font-size:16px}
+.withdrawal-card .state-pension-summary{margin-top:6px;font-size:10px}
+.withdrawal-card #state-pension-status{color:#74479b}
+.withdrawal-card .state-pension-summary button{font-size:10px}
+.withdrawal-card .withdrawal-status{margin-top:6px;padding-top:7px;font-size:11px;line-height:1.5}
+.withdrawal-card .income-ranges{margin-top:6px;padding-top:4px}
+.withdrawal-card .income-range-table{font-size:12px}
+.withdrawal-card .income-range-table tr>td,.withdrawal-card .income-range-table tr>th{padding:6px 8px}
+.withdrawal-card .income-range-table tr>td:first-child,.withdrawal-card .income-range-table tr>th:first-child{padding-left:0}
+.withdrawal-card .income-range-table tr>td:last-child,.withdrawal-card .income-range-table tr>th:last-child{padding-right:0}
+.withdrawal-card .income-range-table thead th{font-size:10px;padding-top:3px;padding-bottom:5px}
+.withdrawal-card .income-range-table thead th:nth-child(1){width:25%}
+.withdrawal-card .income-range-table thead th:nth-child(2){width:25%}
+.withdrawal-card .income-range-table thead th:nth-child(3){width:50%}
+.withdrawal-card .income-range-table strong{font-size:12px}
+.withdrawal-card .income-range-table .plan-control-hint{font-size:10px;margin-top:3px;line-height:1.35}
+.withdrawal-card .income-range-table .range-year{min-height:34px;padding:4px 8px;font-size:17px;max-width:90px}
+.range-from-title{display:flex;align-items:center;gap:6px;min-height:20px}
+.withdrawal-card .range-remove{padding:0 6px;font-size:19px;min-height:24px;margin:0;text-decoration:none}
+.withdrawal-card .income-range-footer{margin-top:7px;gap:10px}
+.withdrawal-card .income-range-footer button{padding:5px 8px;font-size:11px;min-height:30px}
+.withdrawal-card .income-range-footer p{font-size:10px}
+.income-sequence{font-size:11px;line-height:1.5;color:#315b36;margin:6px 0 0}
+.wealth-card{padding:18px 20px}
+.wealth-card h3{font-size:22px}
+.wealth-card .section-heading p{font-size:11px;line-height:1.5;margin:4px 0 7px}
+.wealth-card .projection-timeline{font-size:11px;line-height:1.5;margin-bottom:8px}
+.metrics{margin-bottom:18px;padding:12px 0}
+.metrics strong{font-size:26px}
+#results .result-toolbar{margin-bottom:12px}
+.wizard-state>.check{margin-bottom:0}
+.wizard-state>.help{margin:3px 0 4px}
+.wizard-pension-details{border:0}
+.wizard-pension-details>summary{font-size:12px;padding:6px 0;color:#345d46}
+.wizard-pension-details>.help{margin-top:6px}
+@container(min-width:551px){.income-table-scroll{max-height:210px;overflow:auto}.income-range-table thead th{position:sticky;top:0;background:#eaf0e4!important;z-index:1}}
+@container(max-width:550px){
+ .withdrawal-card .plan-card-heading{grid-template-columns:minmax(0,1fr)125px 28px;gap:8px}
+ .withdrawal-card .plan-card-heading h3{font-size:20px}
+ .withdrawal-card .income-range-table tbody tr{display:grid;grid-template-columns:minmax(68px,.9fr) minmax(65px,.8fr) minmax(140px,1.5fr);gap:6px;padding:6px 0}
+ .withdrawal-card .income-range-table tr>td{display:block;padding:0;border:0}
+ .withdrawal-card .income-range-table td[data-label]:before{font-size:9px;margin-bottom:4px}
+ .withdrawal-card .income-range-table .plan-control-hint{font-size:9px}
+ .withdrawal-card .income-range-table .range-stepper input,.withdrawal-card .income-range-table .range-stepper .plan-value{font-size:17px}
+ .withdrawal-card .income-range-footer{flex-direction:row;align-items:center}
+ .withdrawal-card .growth-controls{gap:7px}
+ .withdrawal-card .growth-controls .plan-stepper{grid-template-columns:25px minmax(0,1fr) 25px}
+ .withdrawal-card .growth-controls .plan-stepper>button{width:25px}
+ .withdrawal-card .growth-controls .plan-stepper output{font-size:17px}
+ .withdrawal-card .state-pension-summary{flex-wrap:nowrap;align-items:center}
+}
+@container(max-width:285px){
+ .withdrawal-card .plan-card-heading{grid-template-columns:minmax(0,1fr)112px 28px;gap:6px}
+ .withdrawal-card .plan-card-heading h3{font-size:18px}
+ .withdrawal-card .income-range-table tbody tr{grid-template-columns:1fr 1fr}
+ .withdrawal-card .income-range-table tbody td:last-child{grid-column:1/-1}
+ .withdrawal-card .growth-controls{gap:5px}
+ .withdrawal-card .growth-controls .plan-stepper{grid-template-columns:22px minmax(0,1fr) 22px}
+ .withdrawal-card .growth-controls .plan-stepper>button{width:22px}
+}
+
+.withdrawal-card #retirement-month{display:none}
+.withdrawal-card .income-range-footer .income-sequence{font-size:11px;max-width:none;margin:0;flex:1;line-height:1.45}
+.wizard-state{border-top:0;margin-top:0;padding-top:0}
+@container(min-width:700px){.withdrawal-card .income-range-table td:nth-child(2) .plan-control-hint{display:inline;margin-left:6px}.withdrawal-card .income-range-table .range-year{max-width:75px}}

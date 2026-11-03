@@ -227,7 +227,7 @@ test('retirement marker shows actual age at the start of its month, including bi
 test('income-funded target is not misreported as retirement outside the projection',()=>{
  const p=createExamplePlan();p.drawdown={stages:[],mode:'totalIncome',annualAmount:12000,inflationLinked:false};
  const r={months:[{month:'2040-01',withdrawalTarget:0,incomeTarget:1000}],firstUnmetWithdrawal:null};
- assert.match(withdrawalOutcome(p,r).text,/funded through/);assert.match(withdrawalCardSummary(p,r),/Funded through/);
+ assert.match(withdrawalOutcome(p,r).text,/funded through/);assert.match(withdrawalCardSummary(p,r),/Gross target funded through/);
 });
 
 import {growthRateControls,shiftGroupGrowth,GROWTH_RATE_STEP} from '../src/view.js';

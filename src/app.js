@@ -1,9 +1,9 @@
 import {mountIncomeStages} from './income-stage-ui.js';
 import {mountStatePension} from './state-pension.js';
-import {formatMoneyValue,parseMoneyInput,attachMoneyInputs} from './money-input.js';
+import {parseMoneyInput,attachMoneyInputs} from './money-input.js';
 import {mountWizard} from './wizard-ui.js';
-import {escapeHTML,discountFactor,retirementSnapshot,updatePlanScreen,withdrawalOutcome,retirementDateLinks,retirementYearControls,shiftRetirementYear,retirementMarker,reconcileRetirementLinks,projectionTimeline,svgChart,mountHelpDialog,withdrawalCardSummary,planSummary,growthRateControls,shiftGroupGrowth,projectionEventMarkers} from './view.js';
-import {createExamplePlan,validatePlan,parsePlan,serializePlan} from './plan.js';
+import {incomeChartSeries,editorMarkup,escapeHTML,discountFactor,retirementSnapshot,updatePlanScreen,withdrawalOutcome,retirementDateLinks,retirementYearControls,shiftRetirementYear,retirementMarker,reconcileRetirementLinks,projectionTimeline,svgChart,mountHelpDialog,withdrawalCardSummary,planSummary,growthRateControls,shiftGroupGrowth,projectionEventMarkers} from './view.js';
+import {createExamplePlan,validatePlan,parsePlan,serializePlan,addPlanItem} from './plan.js';
 import {project} from './model.js';
 const $=id=>document.getElementById(id);
 attachMoneyInputs(document);
@@ -16,17 +16,14 @@ let plan=createExamplePlan(),dirty=false,real=true,result,selectedYear;
 let retirementLinks=retirementDateLinks(plan);
 const linksFor=candidate=>reconcileRetirementLinks(plan,candidate,retirementLinks);
 function acceptEdits(candidate){const validated=validate(candidate);retirementLinks=linksFor(validated);plan=validated;}
-function field(label,path,value,type='number',options=null){const id='f-'+path.replaceAll('.','-'),currency=type==='number'&&label.includes('£');return `<label for="${id}">${esc(label)}${options?`<select id="${id}" name="${path}">${options.map(([v,l])=>`<option value="${v}" ${value===v?'selected':''}>${esc(l)}</option>`).join('')}</select>`:`<input id="${id}" name="${path}" type="${currency?'text':type}" value="${esc(currency?formatMoneyValue(value):value)}" ${currency?'data-money inputmode="decimal"':type==='number'?'step="any"':''}>`}</label>`;}
-const owners=()=>plan.people.map(p=>[p.id,p.name+(p.id==='partner'&&!plan.includePartner?' (excluded)':'')]);
-const types=[['savings','Cash savings'],['cashIsa','Cash ISA'],['stocksIsa','Stocks & shares ISA'],['sipp','SIPP'],['workplace','Workplace DC pension']];
-function renderEditor(){
- $('editor').innerHTML=`<div class="editor-heading"><h2>Your plan</h2><span class="badge">PRIVATE BY DESIGN</span><button type="button" id="edit-state-pension-menu" class="state-pension-shortcut" aria-haspopup="dialog" aria-controls="state-pension-dialog">State Pension settings →</button><p class="help">Edit the weekly amount, claim month and annual increase, or switch it off.</p></div>
- <details open><summary>01 <span>Household & timeline</span></summary><div class="fields">${field('Plan name','name',plan.name,'text')}${field('Projection begins','startMonth',plan.startMonth,'month')}${field('Plan until your age','endAge',plan.endAge)}<label class="check"><input name="includePartner" type="checkbox" ${plan.includePartner?'checked':''}> Include partner in results</label>${plan.people.map((p,i)=>`<fieldset ${p.id==='partner'&&!plan.includePartner?'class="muted-person"':''}><legend>${p.id==='partner'?'Partner (retained even when excluded)':'You'}</legend>${p.name==='Partner (details not entered)'?'<p class="help">Partner details were not entered in setup. These placeholder dates are not personal facts: replace them before including your partner.</p>':''}${field('Display name',`people.${i}.name`,p.name,'text')}${field('Date of birth',`people.${i}.dob`,p.dob,'date')}${field('Retirement month',`people.${i}.retirementMonth`,p.retirementMonth,'month')}${field('Income tax region',`people.${i}.region`,p.region,'text',[['rUK','England, Wales or Northern Ireland'],['scotland','Scotland']])}${field('Pension tax-free allowance already used (£)',`people.${i}.taxFreeUsed`,p.taxFreeUsed)}</fieldset>`).join('')}</div></details>
- <details open><summary>02 <span>Savings & pension pots</span></summary><p class="help">Pension contributions: choose gross entering the pot or your net payment with basic-rate relief. Employer contributions are gross. If your monthly contribution already includes employer payments (as in guided setup), keep the employer field at £0, or subtract those payments before entering them separately. No higher-rate relief is added automatically.</p>${plan.pots.map((p,i)=>`<fieldset class="pot-card"><legend>${esc(p.name)}</legend><div class="fields">${field('Pot name',`pots.${i}.name`,p.name,'text')}${field('Owner',`pots.${i}.owner`,p.owner,'text',owners())}${field('Account type',`pots.${i}.type`,p.type,'text',types)}${field('Starting balance (£)',`pots.${i}.balance`,p.balance)}<div class="two-col">${field('Monthly contribution (£)',`pots.${i}.monthlyContribution`,p.monthlyContribution)}${field('Monthly employer (£)',`pots.${i}.employerContribution`,p.employerContribution)}</div>${field('Contribution basis',`pots.${i}.contributionBasis`,p.contributionBasis,'text',[['gross','Gross / cash entering account'],['netRelief','Net pension payment + 20% relief']])}<div class="two-col">${field('Growth / year (%)',`pots.${i}.growth`,p.growth)}${field('Fees / year (%)',`pots.${i}.fee`,p.fee)}</div><details><summary>Contribution dates & access</summary>${field('First contribution',`pots.${i}.contributionStart`,p.contributionStart,'month')}${field('Last contribution',`pots.${i}.contributionEnd`,p.contributionEnd,'month')}${field('Pension access age (55 now; 57 from Apr 2028)',`pots.${i}.accessAge`,p.accessAge)}<p class="help">Contributions also stop at the owner's retirement. Protected pension ages are not modelled.</p></details><button type="button" class="text-button danger" data-remove="pots:${i}">Remove pot</button></div></fieldset>`).join('')}<button type="button" data-add="pots">+ Add a pot</button></details>
- <details><summary>03 <span>State Pension & other income</span></summary><p class="help">State and defined-benefit pensions are income, not investment pots. Check any illustrative State Pension amount against your own forecast. Use State Pension settings above for weekly amounts or to switch it off. Amounts are monthly gross in projection-start pounds.</p>${plan.incomes.map((p,i)=>`<fieldset><legend>${esc(p.name)}</legend><div class="fields">${field('Income name',`incomes.${i}.name`,p.name,'text')}${field('Owner',`incomes.${i}.owner`,p.owner,'text',owners())}${field('Income type',`incomes.${i}.type`,p.type,'text',[['state','State Pension forecast'],['db','Defined-benefit pension'],['other','Other taxable pension income']])}${field('Monthly gross income (£)',`incomes.${i}.monthlyAmount`,p.monthlyAmount)}${field('Starts',`incomes.${i}.startMonth`,p.startMonth,'month')}${field('Ends',`incomes.${i}.endMonth`,p.endMonth,'month')}${field('Annual escalation (%)',`incomes.${i}.escalation`,p.escalation)}<button type="button" class="text-button danger" data-remove="incomes:${i}">Remove income</button></div></fieldset>`).join('')}<button type="button" data-add="incomes">+ Add income</button></details>
- <details><summary>04 <span>Spending & assumptions</span></summary><div class="fields">${field('Monthly household spending (£)', 'monthlySpending',plan.monthlySpending)}${field('Spending starts','spendingStart',plan.spendingStart,'month')}${field('Annual inflation (%)','inflation',plan.inflation)}<p class="help">Spending is in projection-start pounds and rises with inflation. Contributions are external funding, not deducted from this spending target. The annual withdrawal target above the charts controls recurring pot withdrawals. Spending is a separate comparison, not a second deduction.</p></div></details>
- <details><summary>05 <span>Planned withdrawals & transfers</span></summary><p class="help">Amounts are fixed future pounds, gross removed from the source pot. Withdrawal cash is available for spending after modelled tax and counts towards the recurring target in that same month. Transfers move money, not income; only same-owner non-pension pots are supported.</p>${plan.events.map((p,i)=>`<fieldset><legend>${esc(p.name)}</legend><div class="fields">${field('Event name',`events.${i}.name`,p.name,'text')}${field('Month',`events.${i}.month`,p.month,'month')}${field('Event type',`events.${i}.type`,p.type,'text',[['withdrawal','Withdrawal for spending'],['transfer','Transfer between pots']])}${field('From pot',`events.${i}.potId`,p.potId,'text',plan.pots.map(p=>[p.id,p.name]))}${field('To pot (transfers only)',`events.${i}.toPotId`,p.toPotId,'text',[['','Not a transfer'],...plan.pots.map(p=>[p.id,p.name])])}${field('Gross amount (£)',`events.${i}.amount`,p.amount)}<button type="button" class="text-button danger" data-remove="events:${i}">Remove event</button></div></fieldset>`).join('')}<button type="button" data-add="events">+ Add event</button></details>
- <div class="apply-row"><button type="submit" class="primary">Update projection →</button><p id="edit-status">Adjust your assumptions, then update.</p></div>`;
+function renderEditor() {
+ const editor = $('editor');
+ const sections = new Map(Array.from(editor.children)
+  .filter(element => element.tagName === 'DETAILS')
+  .map((element, index) => [index, element.open]));
+ editor.innerHTML = editorMarkup(plan);
+ Array.from(editor.children).filter(element => element.tagName === 'DETAILS')
+  .forEach((element, index) => { if (sections.has(index)) element.open = sections.get(index); });
 }
 function readDetailedEditor(){const candidate=structuredClone(plan);for(const el of $('editor').querySelectorAll('[name]')){const bits=el.name.split('.');let obj=candidate;for(const bit of bits.slice(0,-1))obj=obj[bit];obj[bits.at(-1)]=el.type==='checkbox'?el.checked:el.hasAttribute('data-money')?parseMoneyInput(el.value):el.type==='number'?(el.value.trim()===''?NaN:Number(el.value)):el.value;}candidate.drawdown.inflationLinked=$('withdrawal-inflation').checked;candidate.drawdown.mode=$('withdrawal-mode').value;return candidate;}
 function readEditor(){return incomeRanges.readPlan(readDetailedEditor());}
@@ -48,7 +45,8 @@ const pensionEvents=projectionEventMarkers(plan,result);$('projection-event-note
 const activePots=plan.pots.filter(p=>plan.includePartner||p.owner!=='partner');$('wealth-chart').innerHTML=svgChart(years,activePots.map((p,i)=>({colour:colours[i%colours.length],values:years.map(y=>(y.balances?.[p.id]||0)/factor(y.year))})),true,marker,pensionEvents.markers);
 $('legend').innerHTML=activePots.map((p,i)=>`<span><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="${colours[i%colours.length]}"/></svg> ${esc(p.name)}</span>`).join('');
 for(const [kind,colour,label] of [['state','#74479b','State Pension starts (income, not a pot)'],['depletion','#b04a38','First total-pot depletion']])if(pensionEvents.markers.some(marker=>marker.kind===kind))$('legend').innerHTML+=`<span><svg width="22" height="12" aria-hidden="true"><path d="M0 6H22" stroke="${colour}" stroke-width="2" stroke-dasharray="4 3"/></svg>${label}</span>`;
-$('income-chart').innerHTML=svgChart(years,[{colour:'#21624d',values:years.map(y=>(y.incomeNet+(y.withdrawalsNet||0))/factor(y.year))},{colour:'#ad713c',dash:true,values:years.map(y=>y.spending/factor(y.year))},{colour:'#a84c45',dash:true,values:years.map(y=>y.shortfall/factor(y.year))}]);
+$('income-chart').innerHTML=svgChart(years,incomeChartSeries(plan,result,real));
+$('state-pension-income-key').hidden=!years.some(year=>year.statePensionGross>0);
 if(!years.some(y=>String(y.year)===String(selectedYear)))selectedYear=retirement.year;$('ledger-year').innerHTML=years.map(y=>`<option value="${y.year}" ${String(y.year)===String(selectedYear)?'selected':''}>${y.year} · turning ${y.year-Number(plan.people.find(p=>p.id==='you').dob.slice(0,4))}</option>`).join('');renderLedger();
 $('event-timeline').innerHTML=plan.events.filter(e=>plan.includePartner||plan.pots.find(p=>p.id===e.potId)?.owner!=='partner').sort((a,b)=>a.month.localeCompare(b.month)).map(e=>`<li><time>${esc(e.month)}</time><div><strong>${esc(e.name)}</strong><span>${esc(e.type)} · ${money(e.amount)} gross future pounds · ${esc(plan.pots.find(p=>p.id===e.potId)?.name)}</span></div></li>`).join('')||'<li>No planned events. Add one in section 05.</li>';
 const warnings=[...new Set([...(plan.includePartner&&plan.people.some(p=>p.name==='Partner (details not entered)')?['Partner details have not been entered. Replace the placeholder dates and figures in Household & timeline before using a joint projection.']:[]),'Tax is an estimate of pension / non-savings income tax, not a complete tax return. Savings interest tax is not included.',...(result.warnings||[])])];$('warnings').innerHTML='<ul>'+warnings.map(w=>`<li>${esc(typeof w==='string'?w:JSON.stringify(w))}</li>`).join('')+'</ul>';$('assumptions').innerHTML='<ul>'+(result.assumptions||[]).map(a=>`<li>${esc(a)}</li>`).join('')+'</ul>';
@@ -58,14 +56,14 @@ function renderWithdrawalControl(){
  $('plan-help-error').hidden=true;$('plan-help-error').textContent='';
  incomeRanges.refresh(plan);
  $('withdrawal-inflation').checked=plan.drawdown.inflationLinked;$('withdrawal-mode').value=plan.drawdown.mode;
- const combined=plan.drawdown.mode==='totalIncome';$('withdrawal-title').textContent=combined?'Plan your retirement income':'Plan your withdrawals';
+ const combined=plan.drawdown.mode==='totalIncome';$('withdrawal-title').textContent=combined?'Your annual income':'Annual pot withdrawals';
  const stateCount=plan.incomes.filter(i=>i.type==='state'&&i.monthlyAmount>0&&(plan.includePartner||i.owner!=='partner')).length;$('state-pension-status').textContent=stateCount?`State Pension ${combined?'included in target':'added separately'}${stateCount>1?' · '+stateCount+' forecasts':''}`:'State Pension not added';
  const who=plan.includePartner?'Household':'Your';
  const retirement=plan.people.find(p=>p.id==='you').retirementMonth;
  $('withdrawal-basis').textContent=`${who} ${combined?'total income target, including State and other pensions':'pot-withdrawal target with pension income additional'}, before tax. ${plan.drawdown.inflationLinked?`In ${plan.startMonth} pounds, increasing with inflation`:'Fixed future pounds, not inflation-linked'}, from your retirement in ${retirement}. Buttons change their own range by £1,000; every range shares this money basis and inflation runs from the plan start, not the stage start.`;
  $('withdrawal-summary').textContent=`Before tax · ${combined?'includes pension income':'pots only'} · ${plan.drawdown.inflationLinked?plan.startMonth+' pounds · increases with inflation':'fixed future pounds · no inflation increase'}`;
- const outcome=withdrawalOutcome(plan,result);
- $('withdrawal-status').textContent=withdrawalCardSummary(plan,result);$('withdrawal-detail-status').textContent=outcome.text;
+ const outcome=withdrawalOutcome(plan,result,real);
+ $('withdrawal-status').textContent=withdrawalCardSummary(plan,result,real);$('withdrawal-detail-status').textContent=outcome.text;
  $('withdrawal-status').classList.toggle('has-gap',outcome.hasGap);
 }
 function renderGrowthControls(){
@@ -92,7 +90,7 @@ for(const category of ['savings','isa','pension']){
 function renderRetirementControl(){
  const month=plan.people.find(p=>p.id==='you').retirementMonth,controls=retirementYearControls(plan,retirementLinks);
  const date=new Date(`${month}-01T00:00:00Z`),monthName=date.toLocaleDateString('en-GB',{month:'long',timeZone:'UTC'});
- $('retirement-date').textContent=month.slice(0,4);$('retirement-date').setAttribute('aria-label',`Retirement ${monthName} ${month.slice(0,4)}`);$('retirement-month').textContent=`${monthName} · 1-year steps`;
+ $('retirement-control-title').textContent=`Retire in ${monthName}`;$('retirement-date').textContent=month.slice(0,4);$('retirement-date').setAttribute('aria-label',`Retirement ${monthName} ${month.slice(0,4)}`);$('retirement-month').textContent=monthName;
  $('retirement-minus').disabled=controls.earlierMonth===month;$('retirement-plus').disabled=controls.laterMonth===month;
  $('retirement-bounds').textContent=`Each click changes one year and keeps the month. Projection range: ${controls.minMonth} to ${controls.maxMonth}. Changes cannot put matching contribution end dates before their start dates.`;
 }
@@ -106,8 +104,51 @@ $('retirement-minus').addEventListener('click',()=>changeRetirement(-1));
 $('retirement-plus').addEventListener('click',()=>changeRetirement(1));
 for(const id of ['withdrawal-inflation','withdrawal-mode'])$(id).addEventListener('change',()=>{if(!incomeRanges.apply(true)){ $('plan-help-error').hidden=false;$('plan-help-error').textContent='Fix the highlighted income range or pending plan edits before changing the target basis.';$('withdrawal-inflation').checked=plan.drawdown.inflationLinked;$('withdrawal-mode').value=plan.drawdown.mode;}});
 $('editor').addEventListener('submit',e=>{e.preventDefault();apply();});$('editor').addEventListener('input',()=>{dirty=true;status();$('edit-status').textContent='Edits not yet applied to the charts.';});
-$('editor').addEventListener('click',e=>{const button=e.target.closest('button');if(!button)return;if(button.id==='edit-state-pension-menu'){button.focus();$('edit-state-pension').click();return;}if(button.dataset.remove){if(!window.confirm('Remove this item from the plan? You can cancel to keep it.'))return;const [key,index]=button.dataset.remove.split(':');let draft;try{draft=readEditor();}catch(error){notify(error.message,true);return;}if(key==='pots'&&draft.events.some(ev=>ev.potId===draft.pots[index].id||ev.toPotId===draft.pots[index].id)){notify('Remove events referencing this pot before removing the pot.',true);return;}draft[key].splice(Number(index),1);try{acceptEdits(draft);dirty=true;status();renderEditor();renderResults();$('editor').querySelector(`[data-add="${key}"]`)?.focus();notify('');}catch(err){notify(err.message,true);}}
-if(button.dataset.add){if(!apply())return;const key=button.dataset.add,id='item-'+crypto.randomUUID();if(key==='pots')plan.pots.push({id,name:'New savings pot',owner:'you',type:'savings',balance:0,monthlyContribution:0,employerContribution:0,contributionBasis:'gross',growth:3,fee:0,contributionStart:plan.startMonth,contributionEnd:plan.people.find(p=>p.id==='you').retirementMonth,accessAge:57});if(key==='incomes')plan.incomes.push({id,name:'New pension income',owner:'you',type:'db',monthlyAmount:0,startMonth:plan.people.find(p=>p.id==='you').retirementMonth,endMonth:'2100-12',escalation:2});if(key==='events'){if(!plan.pots.length){notify('Add a pot before creating an event.',true);return;}plan.events.push({id,name:'Planned withdrawal',month:plan.people.find(p=>p.id==='you').retirementMonth,type:'withdrawal',potId:plan.pots[0].id,toPotId:'',amount:1000});}renderEditor();renderResults();$('editor').querySelector(`[name="${key}.${plan[key].length-1}.name"]`)?.focus();}});
+function removeItemFromEditor(reference) {
+  if (!window.confirm('Remove this item from the plan? You can cancel to keep it.')) return;
+  const [key, index] = reference.split(':');
+  try {
+    const candidate = readEditor();
+    if (key === 'pots' && candidate.events.some(event =>
+      event.potId === candidate.pots[index].id || event.toPotId === candidate.pots[index].id)) {
+      notify('Remove events referencing this pot before removing the pot.', true);
+      return;
+    }
+    candidate[key].splice(Number(index), 1);
+    acceptEdits(candidate);
+    dirty = true;
+    status();
+    renderEditor();
+    renderResults();
+    $('editor').querySelector(`[data-add="${key}"]`)?.focus();
+    notify('');
+  } catch (error) { notify(error.message, true); }
+}
+
+function addItemFromEditor(collection) {
+  try {
+    acceptEdits(addPlanItem(readEditor(), collection));
+    dirty = true;
+    status();
+    notify('');
+    renderEditor();
+    renderResults();
+    $('editor').querySelector(`[name="${collection}.${plan[collection].length - 1}.name"]`)?.focus();
+  } catch (error) { notify(error.message, true); }
+}
+
+$('editor').addEventListener('click', event => {
+  const button = event.target.closest('button');
+  if (!button) return;
+  if (button.id === 'edit-state-pension-menu') {
+    button.focus();
+    $('edit-state-pension').click();
+  } else if (button.dataset.remove) {
+    removeItemFromEditor(button.dataset.remove);
+  } else if (button.dataset.add) {
+    addItemFromEditor(button.dataset.add);
+  }
+});
 for(const [id,value] of [['real',true],['nominal',false]])$(id).addEventListener('click',()=>{real=value;$('real').setAttribute('aria-pressed',String(real));$('nominal').setAttribute('aria-pressed',String(!real));renderResults();});$('ledger-year').addEventListener('change',e=>{selectedYear=e.target.value;renderLedger();});
 $('save').addEventListener('click',()=>{if(!apply())return;const blob=new Blob([serializePlan(plan)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='retirement-plan.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);dirty=false;cleanLabel='Plan file download requested';status();notify('Plan file download requested. Check your downloads. This file is unencrypted; keep it safe.');});
 for(const id of ['load','load-home'])$(id).addEventListener('click',()=>{$('file').value='';$('file').click();});$('file').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>1024*1024)throw Error('Plan file is too large (maximum 1 MB).');const loaded=parsePlan(await file.text());if(!$('planner-view').hidden&&!window.confirm('Replace the current plan with this file? Any unsaved changes will be lost.'))return;plan=loaded;incomeRanges.reset(plan);retirementLinks={potIds:[],spending:false};dirty=false;cleanLabel='Loaded plan · no unsaved edits';status();updatePlanScreen(document,'planAccepted');renderEditor();renderResults();$('results').focus();notify('Plan loaded. Its data stays in this tab.');}catch(err){notify('Could not load plan. Your existing plan is unchanged. '+err.message,true);}});

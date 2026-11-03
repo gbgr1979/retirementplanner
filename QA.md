@@ -123,3 +123,23 @@ Retirement timing now appears first, followed by a native three-column table wit
 The underlying age stages and schema are unchanged. Date-of-birth changes preserve saved ages and refresh calendar labels; simultaneous unfinished year and birth-date edits are rejected rather than silently reinterpreted. Independent numerical review checked 540 birthday/year inverses, December and leap boundaries, monthly pension/withdrawal offsets, partial horizons and unchanged save/load projections. Mobile rendering and browser file loading remain untested; responsive styles and programmatic roundtrips are checked. No deployment performed.
 
 All 230 tests, syntax/build and fourteen-asset payload checks pass. Independent desktop screenshot and interaction checks passed retirement-first order, table alignment, contiguous dates, decimal amount steps, duplicate-year validation/recovery, live graph changes, pending edits and focus.
+
+## Review corrections — 3 November 2026
+
+All 240 unit and HTTP tests, syntax checks for every browser/tooling module, static build and exact fourteen-asset payload verification pass on Windows with Node 24. The server regression verifies Windows and POSIX path handling and actually requests the homepage, stylesheet and every browser module; private publisher/source-plan paths return 404.
+
+The scenario headline now highlights the first spending deficit independently of the gross withdrawal target. A full-year regression with a £24,000 gross target and £2,000 monthly spending reports £1,857.22 available after modelled tax and a £142.78 gap, despite the gross target being funded. Coverage includes zero targets, simultaneous gross/net gaps, display-money conversion and monthly deficits hidden by annual surpluses. No automatic gross-up or financial-engine changes were introduced.
+
+Item additions validate an independent candidate before updating the live plan. Regression cases cover already-retired plans, future income beyond 2100, collection limits, duplicate IDs, active pot selection, save/reload and removal. Detailed editor markup lives in the display module; open settings sections survive editor rebuilds.
+
+Actual headless Microsoft Edge checks passed at 1365×1000 and 390×844: startup, cancelled and completed setup, required-field validation, spending warning and styling, add/apply/save/remove for pots/incomes/events, invalid pending-edit preservation, file download and reload, and no horizontal overflow or browser exceptions. Desktop/mobile card screenshots were visually inspected. Narrow desktop-browser emulation is not physical-device or assistive-technology certification.
+
+GitHub Actions is configured to run the core checks on Windows/Linux with Node 22/24 and optional Chromium browser checks on Linux. These hosted jobs have not run in this session. Browser tooling is development-only and is excluded from the public payload. No source push or deployment was performed.
+
+## Compact scenario and State Pension display — 3 November 2026
+
+247 tests, syntax checks for all source/tooling modules, build and exact fourteen-asset payload verification pass. Browser checks pass in Microsoft Edge at 1365×900 and 390×844, including collapsed forecast details, custom forecasts retained through Back/Next, automatic disclosure on validation errors, live amount changes, saved files and no horizontal overflow. The tested two-period desktop card is under 430px high, and the complete wealth plot fits in the same 900px-high viewport as its controls when the results section is aligned to the top. Screenshots of the wizard, desktop/mobile controls and purple income line were inspected.
+
+The From/Until table retains exact birthday-month boundaries and shows matching ages. Change income later adds a period; an effective-range summary describes the sequence and excludes unused before-retirement/out-of-horizon changes. Invalid drafts preserve raw text and last valid chart values. Pot summary values follow the wealth chart to keep the graph immediately beside the comparison workflow.
+
+State Pension has separate gross/net component fields on monthly and annual projection rows. Its net series subtracts only its share of existing per-owner modelled tax. Regression tests cover partner inclusion and Scottish tax, escalation and payment dates, partial calendar years, inflation display, no-payment cases, and identical pot balances, total cash and total tax when equivalent income is classified as DB instead. Purple is a labelled component of total income, not an extra cash flow or wealth balance. The saved schema remains v4. No deployment performed.
