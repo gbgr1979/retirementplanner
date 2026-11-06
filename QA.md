@@ -143,3 +143,13 @@ GitHub Actions is configured to run the core checks on Windows/Linux with Node 2
 The From/Until table retains exact birthday-month boundaries and shows matching ages. Change income later adds a period; an effective-range summary describes the sequence and excludes unused before-retirement/out-of-horizon changes. Invalid drafts preserve raw text and last valid chart values. Pot summary values follow the wealth chart to keep the graph immediately beside the comparison workflow.
 
 State Pension has separate gross/net component fields on monthly and annual projection rows. Its net series subtracts only its share of existing per-owner modelled tax. Regression tests cover partner inclusion and Scottish tax, escalation and payment dates, partial calendar years, inflation display, no-payment cases, and identical pot balances, total cash and total tax when equivalent income is classified as DB instead. Purple is a labelled component of total income, not an extra cash flow or wealth balance. The saved schema remains v4. No deployment performed.
+
+## Withdrawal overlay — 3 November 2026
+
+253 tests, all-module syntax checks, build and fourteen-asset payload verification pass. The main wealth chart now overlays actual annual gross pot withdrawals as a blue line, with a separate labelled right axis; wealth retains the left axis. Scheduled withdrawals count, transfers and State Pension receipts do not. Both money views use the same year-end discount convention as wealth, and partial calendar years are not annualised.
+
+Regression tests verify independent scale/wealth accounting, common x positions and retirement markers, pension-income offsets, partner exclusion, underfunded targets, one-off events, transfers, partial-year totals, tiny/zero/large values and escaped labels. Headless Edge desktop/mobile checks passed live amount updates, money-toggle changes and exact restoration, no horizontal overflow, and the existing compact-card/full-graph visibility check. Desktop/mobile screenshots of both axes and the blue overlay were inspected. No model/schema changes, commit, push or deployment performed for this update.
+
+## Partner section visibility — 4 November 2026
+
+The Household & timeline partner fieldset hides when Include partner in results is unchecked, including on initial render and file load. Toggling the checkbox changes visibility immediately without discarding pending details. Desktop/mobile browser checks passed toggling, preserving unapplied edits, and saving/reloading excluded partner details. All 253 tests, syntax checks, build and fourteen-asset payload verification passed.

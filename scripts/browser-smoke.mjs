@@ -54,6 +54,33 @@ try {
     await page.locator('#wizard-next').click();
     await page.locator('#planner-view').waitFor({state:'visible'});
 
+    // Partner fields follow the checkbox immediately, retaining unapplied edits.
+    const partnerSection = page.locator('#editor [data-person="partner"]');
+    const includePartner = page.locator('#editor [name="includePartner"]');
+    assert.equal(await partnerSection.isVisible(), false);
+    await includePartner.check();
+    assert.equal(await partnerSection.isVisible(), true);
+    const partnerName = partnerSection.locator('[name$=".name"]');
+    await partnerName.fill('Partner draft');
+    await includePartner.uncheck();
+    assert.equal(await partnerSection.isVisible(), false);
+    await includePartner.check();
+    assert.equal(await partnerName.inputValue(), 'Partner draft');
+    await includePartner.uncheck();
+    await page.locator('#editor button[type="submit"]').click();
+    assert.equal(await partnerSection.isVisible(), false);
+    const partnerDownloadEvent = page.waitForEvent('download');
+    await page.locator('#save').click();
+    const partnerSaved = parsePlan(await readFile(await (await partnerDownloadEvent).path(), 'utf8'));
+    assert.equal(partnerSaved.includePartner, false);
+    assert.equal(partnerSaved.people.find(person => person.id === 'partner').name, 'Partner draft');
+    await page.locator('#file').setInputFiles({name:'partner-hidden.json', mimeType:'application/json', buffer:Buffer.from(JSON.stringify(partnerSaved))});
+    assert.equal(await partnerSection.isVisible(), false);
+    await includePartner.check();
+    assert.equal(await partnerSection.isVisible(), true);
+    assert.equal(await partnerName.inputValue(), 'Partner draft');
+    await includePartner.uncheck();
+
     const plan = createExamplePlan();
     Object.assign(plan, {startMonth:'2026-04', endAge:68, inflation:0, spendingStart:'2026-04', monthlySpending:2000, events:[]});
     Object.assign(plan.people[0], {dob:'1959-04-01', retirementMonth:'2025-04'});
@@ -120,9 +147,17 @@ try {
     await page.waitForFunction(() => document.getElementById('is-income-summary').textContent.includes('£40,000'));
     assert.match(await page.locator('#is-income-summary').textContent(), /£40,000 a year until age 70, then £20,000 a year to plan end/);
     const beforePath = await page.locator('#wealth-chart').innerHTML();
+    const withdrawalLine=page.locator('#wealth-chart polyline[data-axis="right"]');
+    assert.equal(await withdrawalLine.getAttribute('stroke'),'#1d5fa6');
+    const withdrawalPoints=await withdrawalLine.getAttribute('points');
     await page.locator('#is-plus--1').click();
     assert.notEqual(await page.locator('#wealth-chart').innerHTML(), beforePath);
+    assert.notEqual(await withdrawalLine.getAttribute('points'),withdrawalPoints);
     await page.locator('#is-minus--1').click();
+    await page.locator('#nominal').click();
+    assert.notEqual(await withdrawalLine.getAttribute('points'),withdrawalPoints);
+    await page.locator('#real').click();
+    assert.equal(await withdrawalLine.getAttribute('points'),withdrawalPoints);
     await page.locator('#results').evaluate(el => el.scrollIntoView({block:'start'}));
     const card = await page.locator('.withdrawal-card').boundingBox();
     const graph = await page.locator('#wealth-chart').boundingBox();
@@ -135,6 +170,7 @@ try {
     assert.equal(await stateLine.getAttribute('stroke'), '#74479b');
     assert.ok((await stateLine.getAttribute('points')).split(' ').some(point => Number(point.split(',')[1]) < 226));
     await page.screenshot({path:`test-results/compact-scenario-${name}.png`});
+    await page.locator('.wealth-card').screenshot({path:`test-results/withdrawal-overlay-${name}.png`});
     await page.locator('.withdrawal-card').screenshot({path:`test-results/compact-scenario-${name}-card.png`});
     await page.locator('#income-chart').locator('xpath=ancestor::article[1]').screenshot({path:`test-results/state-pension-income-${name}.png`});
     assert.deepEqual(errors, [], `${name}: browser errors`);

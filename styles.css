@@ -119,3 +119,9 @@ tr.ledger-total th,tr.ledger-total td{font-weight:bold;border-top:2px solid #b8c
 .withdrawal-card .income-range-footer .income-sequence{font-size:11px;max-width:none;margin:0;flex:1;line-height:1.45}
 .wizard-state{border-top:0;margin-top:0;padding-top:0}
 @container(min-width:700px){.withdrawal-card .income-range-table td:nth-child(2) .plan-control-hint{display:inline;margin-left:6px}.withdrawal-card .income-range-table .range-year{max-width:75px}}
+
+.chart-card svg .withdrawal-axis-label{fill:#1d5fa6;font-weight:600}
+.chart-card svg .wealth-axis-heading{fill:#53674f;font-weight:600}
+.withdrawal-axis line{stroke:#1d5fa6;stroke-opacity:.45;stroke-width:1}
+.pot-withdrawal-line,.withdrawal-line-halo{vector-effect:non-scaling-stroke;stroke-linejoin:round;stroke-linecap:round;pointer-events:none}
+@media(max-width:760px){.wealth-card svg text,.wealth-card svg .wealth-axis-heading,.wealth-card svg .withdrawal-axis-label{font-size:18px}.wealth-card svg .retirement-marker-label,.wealth-card svg .state-marker-label,.wealth-card svg .depletion-marker-label{font-size:15px}}

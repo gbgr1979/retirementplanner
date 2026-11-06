@@ -2,7 +2,7 @@ import {mountIncomeStages} from './income-stage-ui.js';
 import {mountStatePension} from './state-pension.js';
 import {parseMoneyInput,attachMoneyInputs} from './money-input.js';
 import {mountWizard} from './wizard-ui.js';
-import {incomeChartSeries,editorMarkup,escapeHTML,discountFactor,retirementSnapshot,updatePlanScreen,withdrawalOutcome,retirementDateLinks,retirementYearControls,shiftRetirementYear,retirementMarker,reconcileRetirementLinks,projectionTimeline,svgChart,mountHelpDialog,withdrawalCardSummary,planSummary,growthRateControls,shiftGroupGrowth,projectionEventMarkers} from './view.js';
+import {potWithdrawalSeries,incomeChartSeries,editorMarkup,escapeHTML,discountFactor,retirementSnapshot,updatePlanScreen,withdrawalOutcome,retirementDateLinks,retirementYearControls,shiftRetirementYear,retirementMarker,reconcileRetirementLinks,projectionTimeline,svgChart,mountHelpDialog,withdrawalCardSummary,planSummary,growthRateControls,shiftGroupGrowth,projectionEventMarkers} from './view.js';
 import {createExamplePlan,validatePlan,parsePlan,serializePlan,addPlanItem} from './plan.js';
 import {project} from './model.js';
 const $=id=>document.getElementById(id);
@@ -42,8 +42,9 @@ $('summary-retirement-help').textContent=summary.retirement.note;$('summary-end-
 
 const marker=retirementMarker(plan.people.find(p=>p.id==='you').retirementMonth,years,result.months,plan.people.find(p=>p.id==='you').dob);$('retirement-marker-note').textContent=marker.note;
 const pensionEvents=projectionEventMarkers(plan,result);$('projection-event-notes').innerHTML=pensionEvents.notes.map(note=>`<li>${esc(note)}</li>`).join('');
-const activePots=plan.pots.filter(p=>plan.includePartner||p.owner!=='partner');$('wealth-chart').innerHTML=svgChart(years,activePots.map((p,i)=>({colour:colours[i%colours.length],values:years.map(y=>(y.balances?.[p.id]||0)/factor(y.year))})),true,marker,pensionEvents.markers);
+const activePots=plan.pots.filter(p=>plan.includePartner||p.owner!=='partner');$('wealth-chart').innerHTML=svgChart(years,activePots.map((p,i)=>({colour:colours[i%colours.length],values:years.map(y=>(y.balances?.[p.id]||0)/factor(y.year))})),true,marker,pensionEvents.markers,potWithdrawalSeries(plan,result,real));
 $('legend').innerHTML=activePots.map((p,i)=>`<span><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="${colours[i%colours.length]}"/></svg> ${esc(p.name)}</span>`).join('');
+$('legend').innerHTML+='<span><svg width="22" height="12" aria-hidden="true"><path d="M0 6H22" stroke="#1d5fa6" stroke-width="3"/></svg>Withdrawals / year before tax · right axis</span>';
 for(const [kind,colour,label] of [['state','#74479b','State Pension starts (income, not a pot)'],['depletion','#b04a38','First total-pot depletion']])if(pensionEvents.markers.some(marker=>marker.kind===kind))$('legend').innerHTML+=`<span><svg width="22" height="12" aria-hidden="true"><path d="M0 6H22" stroke="${colour}" stroke-width="2" stroke-dasharray="4 3"/></svg>${label}</span>`;
 $('income-chart').innerHTML=svgChart(years,incomeChartSeries(plan,result,real));
 $('state-pension-income-key').hidden=!years.some(year=>year.statePensionGross>0);
@@ -104,6 +105,11 @@ $('retirement-minus').addEventListener('click',()=>changeRetirement(-1));
 $('retirement-plus').addEventListener('click',()=>changeRetirement(1));
 for(const id of ['withdrawal-inflation','withdrawal-mode'])$(id).addEventListener('change',()=>{if(!incomeRanges.apply(true)){ $('plan-help-error').hidden=false;$('plan-help-error').textContent='Fix the highlighted income range or pending plan edits before changing the target basis.';$('withdrawal-inflation').checked=plan.drawdown.inflationLinked;$('withdrawal-mode').value=plan.drawdown.mode;}});
 $('editor').addEventListener('submit',e=>{e.preventDefault();apply();});$('editor').addEventListener('input',()=>{dirty=true;status();$('edit-status').textContent='Edits not yet applied to the charts.';});
+$('editor').addEventListener('change',event=>{
+ if(event.target.name==='includePartner'){
+  $('editor').querySelector('[data-person="partner"]').hidden=!event.target.checked;
+ }
+});
 function removeItemFromEditor(reference) {
   if (!window.confirm('Remove this item from the plan? You can cancel to keep it.')) return;
   const [key, index] = reference.split(':');
